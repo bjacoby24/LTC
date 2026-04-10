@@ -1,11 +1,13 @@
 import { getDom } from "./dom.js";
 import { normalizeText } from "./utils.js";
 import {
-  getStoredUser,
   loadSettings,
   saveSettings,
   clearLoggedIn,
-  saveStoredUser
+  loadUsers,
+  saveUsers,
+  updateUserPassword,
+  getLoggedInUsername
 } from "./storage.js";
 
 export async function initSettings() {
@@ -42,7 +44,9 @@ export async function initSettings() {
         defaultLocation: saved.defaultLocation || "",
         theme: saved.theme || "default",
         serviceTasks: Array.isArray(saved.serviceTasks) ? saved.serviceTasks : [],
-        serviceTemplates: Array.isArray(saved.serviceTemplates) ? saved.serviceTemplates : []
+        serviceTemplates: Array.isArray(saved.serviceTemplates)
+          ? saved.serviceTemplates
+          : []
       };
     } catch (error) {
       console.error("Failed to load settings:", error);
@@ -57,7 +61,9 @@ export async function initSettings() {
       companyName: settingsCache.companyName || "",
       defaultLocation: settingsCache.defaultLocation || "",
       theme: settingsCache.theme || "default",
-      serviceTasks: Array.isArray(settingsCache.serviceTasks) ? settingsCache.serviceTasks : [],
+      serviceTasks: Array.isArray(settingsCache.serviceTasks)
+        ? settingsCache.serviceTasks
+        : [],
       serviceTemplates: Array.isArray(settingsCache.serviceTemplates)
         ? settingsCache.serviceTemplates
         : []
@@ -138,7 +144,7 @@ export async function initSettings() {
     }
   }
 
-  function openSettingsPanel() {
+  async function openSettingsPanel() {
     populateSettingsForm();
     closeAllSettingsPanels();
 
@@ -149,6 +155,8 @@ export async function initSettings() {
     if (dom.settingsDropdown) {
       dom.settingsDropdown.classList.remove("show");
     }
+
+    await renderUsers();
   }
 
   function closeSettingsPanel() {
@@ -275,15 +283,21 @@ export async function initSettings() {
       return;
     }
 
-    const currentUser = getStoredUser();
+    const currentUsername = getLoggedInUsername();
 
-    saveStoredUser({
-      ...currentUser,
-      password: newPassword
-    });
+    if (!currentUsername) {
+      await showMessageModal("Not Logged In", "No logged-in user was found.");
+      return;
+    }
 
-    closePasswordModal();
-    await showMessageModal("Password Updated", "Password updated.");
+    try {
+      await updateUserPassword(currentUsername, newPassword);
+      closePasswordModal();
+      await showMessageModal("Password Updated", "Password updated.");
+    } catch (error) {
+      console.error("Failed to update password:", error);
+      await showMessageModal("Update Failed", "Unable to update password.");
+    }
   }
 
   function logoutUser() {
@@ -316,7 +330,184 @@ export async function initSettings() {
     );
   }
 
+  async function renderUsers() {
+    const usersRoot = document.getElementById("usersList");
+    if (!usersRoot) return;
+
+    usersRoot.innerHTML = "";
+
+    let users = [];
+    try {
+      users = await loadUsers();
+    } catch (error) {
+      console.error("Failed to load users:", error);
+    }
+
+    if (!users.length) {
+      usersRoot.innerHTML = `<p>No users found.</p>`;
+      return;
+    }
+
+    const currentUsername = getLoggedInUsername();
+
+    users.forEach(user => {
+      const row = document.createElement("div");
+      row.className = "userRow";
+      row.innerHTML = `
+        <div>
+          <strong>${user.username}</strong>
+          <span>(${user.role})</span>
+          ${user.active === false ? `<span> - inactive</span>` : ``}
+          ${user.username === currentUsername ? `<span> - current</span>` : ``}
+        </div>
+        <div class="formButtons">
+          <button type="button" data-user-toggle="${user.username}">
+            ${user.active === false ? "Activate" : "Deactivate"}
+          </button>
+          <button type="button" data-user-delete="${user.username}">
+            Delete
+          </button>
+        </div>
+      `;
+      usersRoot.appendChild(row);
+    });
+
+    usersRoot.querySelectorAll("[data-user-toggle]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const username = btn.getAttribute("data-user-toggle");
+        const currentUsers = await loadUsers();
+
+        const updatedUsers = currentUsers.map(user =>
+          user.username === username
+            ? { ...user, active: !user.active }
+            : user
+        );
+
+        const activeAdmins = updatedUsers.filter(
+          user => user.active && user.role === "admin"
+        );
+
+        if (!activeAdmins.length) {
+          await showMessageModal(
+            "Action Blocked",
+            "At least one active admin user is required."
+          );
+          return;
+        }
+
+        try {
+          await saveUsers(updatedUsers);
+          await renderUsers();
+        } catch (error) {
+          console.error("Failed to toggle user state:", error);
+          await showMessageModal("Save Failed", "Unable to update user.");
+        }
+      });
+    });
+
+    usersRoot.querySelectorAll("[data-user-delete]").forEach(btn => {
+      btn.addEventListener("click", async () => {
+        const username = btn.getAttribute("data-user-delete");
+
+        const confirmed = await showAppModal({
+          title: "Delete User",
+          message: `Delete user "${username}"?`,
+          confirmText: "Delete",
+          cancelText: "Cancel",
+          danger: true,
+          showCancel: true
+        });
+
+        if (!confirmed) return;
+
+        const currentUsers = await loadUsers();
+        const updatedUsers = currentUsers.filter(user => user.username !== username);
+
+        const activeAdmins = updatedUsers.filter(
+          user => user.active && user.role === "admin"
+        );
+
+        if (!activeAdmins.length) {
+          await showMessageModal(
+            "Action Blocked",
+            "At least one active admin user is required."
+          );
+          return;
+        }
+
+        try {
+          await saveUsers(updatedUsers);
+          await renderUsers();
+        } catch (error) {
+          console.error("Failed to delete user:", error);
+          await showMessageModal("Delete Failed", "Unable to delete user.");
+        }
+      });
+    });
+  }
+
+  async function addUserFromForm() {
+    const username = normalizeText(
+      document.getElementById("newUserUsernameInput")?.value
+    );
+    const password = normalizeText(
+      document.getElementById("newUserPasswordInput")?.value
+    );
+    const role =
+      document.getElementById("newUserRoleSelect")?.value === "admin"
+        ? "admin"
+        : "user";
+
+    if (!username) {
+      await showMessageModal("Missing Username", "Enter a username.");
+      return;
+    }
+
+    if (!password) {
+      await showMessageModal("Missing Password", "Enter a password.");
+      return;
+    }
+
+    const users = await loadUsers();
+
+    if (users.some(user => user.username === username)) {
+      await showMessageModal("Duplicate User", "That username already exists.");
+      return;
+    }
+
+    try {
+      await saveUsers([
+        ...users,
+        {
+          id: username,
+          username,
+          password,
+          role,
+          active: true
+        }
+      ]);
+    } catch (error) {
+      console.error("Failed to add user:", error);
+      await showMessageModal("Save Failed", "Unable to add user.");
+      return;
+    }
+
+    const usernameInput = document.getElementById("newUserUsernameInput");
+    const passwordInput = document.getElementById("newUserPasswordInput");
+    const roleSelect = document.getElementById("newUserRoleSelect");
+
+    if (usernameInput) usernameInput.value = "";
+    if (passwordInput) passwordInput.value = "";
+    if (roleSelect) roleSelect.value = "user";
+
+    await renderUsers();
+  }
+
   function bindEvents() {
+    const manageUsersBtn = document.getElementById("manageUsersBtn");
+    const addUserBtn = document.getElementById("addUserBtn");
+    const refreshUsersBtn = document.getElementById("refreshUsersBtn");
+
     if (dom.settingsMenuBtn && dom.settingsDropdown) {
       dom.settingsMenuBtn.addEventListener("click", event => {
         event.stopPropagation();
@@ -325,7 +516,18 @@ export async function initSettings() {
     }
 
     if (dom.openSettingsBtn) {
-      dom.openSettingsBtn.addEventListener("click", openSettingsPanel);
+      dom.openSettingsBtn.addEventListener("click", () => {
+        openSettingsPanel();
+      });
+    }
+
+    if (manageUsersBtn) {
+      manageUsersBtn.addEventListener("click", () => {
+        openSettingsPanel();
+        if (dom.settingsDropdown) {
+          dom.settingsDropdown.classList.remove("show");
+        }
+      });
     }
 
     if (dom.openServicesBtn) {
@@ -370,6 +572,18 @@ export async function initSettings() {
       dom.logoutBtn.addEventListener("click", logoutUser);
     }
 
+    if (addUserBtn) {
+      addUserBtn.addEventListener("click", () => {
+        addUserFromForm();
+      });
+    }
+
+    if (refreshUsersBtn) {
+      refreshUsersBtn.addEventListener("click", () => {
+        renderUsers();
+      });
+    }
+
     document.addEventListener("click", event => {
       if (
         dom.settingsDropdown &&
@@ -411,6 +625,7 @@ export async function initSettings() {
     populateSettingsForm,
     openSettingsPanel,
     closeSettingsPanel,
-    getSettings
+    getSettings,
+    renderUsers
   };
 }

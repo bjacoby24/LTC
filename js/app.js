@@ -3,10 +3,11 @@ console.log("APP JS LOADED");
 import { getDom } from "./dom.js";
 import {
   ensureDefaultUser,
-  getStoredUser,
+  validateUserCredentials,
   setLoggedIn,
   isLoggedIn
 } from "./storage.js";
+import { startLiveSync } from "./live-sync.js";
 
 import { initNavigation } from "./navigation.js";
 import { initSettings } from "./settings.js";
@@ -41,6 +42,7 @@ async function runInit(name, fn) {
 
 document.addEventListener("DOMContentLoaded", async () => {
   const dom = getDom();
+  let stopLiveSync = null;
 
   /* -------------------------
      APP VISIBILITY
@@ -49,6 +51,7 @@ document.addEventListener("DOMContentLoaded", async () => {
     if (dom.loginScreen) dom.loginScreen.style.display = "none";
     if (dom.appWrapper) dom.appWrapper.style.display = "flex";
 
+    if (dom.loginUsername) dom.loginUsername.value = "";
     if (dom.loginPassword) dom.loginPassword.value = "";
     if (dom.loginError) dom.loginError.textContent = "";
   }
@@ -68,43 +71,68 @@ document.addEventListener("DOMContentLoaded", async () => {
   }
 
   /* -------------------------
+     LIVE SYNC
+  ------------------------- */
+  async function initLiveSync() {
+    try {
+      stopLiveSync = await startLiveSync({
+        onRemoteChange: info => {
+          console.log("[live-sync] Remote change detected:", info);
+
+          if (!isLoggedIn()) return;
+
+          window.location.reload();
+        }
+      });
+
+      console.log("[live-sync] initialized");
+    } catch (error) {
+      console.error("[live-sync] failed to initialize", error);
+    }
+  }
+
+  /* -------------------------
      LOGIN
   ------------------------- */
-  function loginUser() {
+  async function loginUser() {
     const username = (dom.loginUsername?.value || "").trim();
     const password = dom.loginPassword?.value || "";
-    const storedUser = getStoredUser();
 
-    console.log("Attempting login with:", { username });
-    console.log("Stored user:", storedUser);
-
-    if (!storedUser || !storedUser.username || !storedUser.password) {
-      console.error("Stored user is missing or invalid:", storedUser);
+    if (!username || !password) {
       if (dom.loginError) {
-        dom.loginError.textContent = "Login setup error. No stored user found.";
+        dom.loginError.textContent = "Enter username and password.";
       }
       return;
     }
 
-    if (username === storedUser.username && password === storedUser.password) {
-      setLoggedIn(username);
+    try {
+      const matchedUser = await validateUserCredentials(username, password);
+
+      if (!matchedUser) {
+        if (dom.loginError) {
+          dom.loginError.textContent = "Invalid username or password.";
+        }
+        return;
+      }
+
+      setLoggedIn(matchedUser.username);
 
       if (dom.loginError) {
         dom.loginError.textContent = "";
       }
 
-      console.log("Login successful");
+      console.log("Login successful:", matchedUser.username);
       showApp();
-    } else {
-      console.warn("Invalid login attempt");
+    } catch (error) {
+      console.error("Login failed:", error);
       if (dom.loginError) {
-        dom.loginError.textContent = "Invalid username or password.";
+        dom.loginError.textContent = "Login failed. Try again.";
       }
     }
   }
 
-  function initLogin() {
-    ensureDefaultUser();
+  async function initLogin() {
+    await ensureDefaultUser();
 
     console.log("Login DOM check:", {
       loginScreen: !!dom.loginScreen,
@@ -115,20 +143,22 @@ document.addEventListener("DOMContentLoaded", async () => {
       loginError: !!dom.loginError
     });
 
-    console.log("Stored user before login init:", getStoredUser());
+    console.log("Login system initialized");
     console.log("isLoggedIn:", isLoggedIn());
 
     if (dom.loginBtn) {
-      dom.loginBtn.addEventListener("click", loginUser);
+      dom.loginBtn.addEventListener("click", async () => {
+        await loginUser();
+      });
     } else {
       console.warn("loginBtn not found");
     }
 
     if (dom.loginPassword) {
-      dom.loginPassword.addEventListener("keydown", event => {
+      dom.loginPassword.addEventListener("keydown", async event => {
         if (event.key === "Enter") {
           event.preventDefault();
-          loginUser();
+          await loginUser();
         }
       });
     } else {
@@ -156,6 +186,17 @@ document.addEventListener("DOMContentLoaded", async () => {
   await runInit("Vendors", initVendors);
   await runInit("Purchase Orders nav", initPurchaseOrdersNav);
   await runInit("Deleted Equipment", initDeletedEquipment);
-
   await runInit("Dashboard", initDashboard);
+
+  await runInit("Live sync", initLiveSync);
+
+  window.addEventListener("beforeunload", () => {
+    if (typeof stopLiveSync === "function") {
+      try {
+        stopLiveSync();
+      } catch (error) {
+        console.error("[live-sync] cleanup failed", error);
+      }
+    }
+  });
 });

@@ -4,6 +4,7 @@ const KEYS = {
   fleetUser: "fleetUser",
   fleetLoggedIn: "fleetLoggedIn",
   fleetLoggedInUser: "fleetLoggedInUser",
+  fleetUsersCache: "fleetUsersCache",
 
   fleetSettings: "fleetSettings",
 
@@ -24,13 +25,13 @@ const KEYS = {
 const COLLECTIONS = {
   settingsCollection: "appData",
   settingsDoc: "settings",
-
   equipment: "equipment",
   deletedEquipment: "deletedEquipment",
   workOrders: "workOrders",
   inventory: "inventory",
   vendors: "vendors",
-  purchaseOrders: "purchaseOrders"
+  purchaseOrders: "purchaseOrders",
+  users: "users"
 };
 
 let firestoreState = {
@@ -394,38 +395,221 @@ async function writeSettingsDoc(settings) {
 /* -------------------------
    USER LOGIN STORAGE
 ------------------------- */
-export function ensureDefaultUser() {
-  const existing = getStoredUser();
-
-  if (!existing || !existing.username || !existing.password) {
-    localStorage.setItem(
-      KEYS.fleetUser,
-      JSON.stringify({
-        username: "admin",
-        password: "admin"
-      })
-    );
-  }
-}
-
-export function getStoredUser() {
-  const user = getObject(KEYS.fleetUser, { username: "admin", password: "admin" });
+function normalizeUserRecord(user = {}) {
+  const username = normalizeString(user?.username).trim();
+  const password = normalizeString(user?.password);
+  const role = normalizeString(user?.role, "user") || "user";
+  const active = user?.active !== false;
 
   return {
-    username: normalizeString(user.username, "admin") || "admin",
-    password: normalizeString(user.password, "admin") || "admin"
+    id: normalizeString(user?.id, username) || username,
+    username,
+    password,
+    role: role === "admin" ? "admin" : "user",
+    active
   };
 }
 
-export function saveStoredUser(user) {
-  setObject(
-    KEYS.fleetUser,
-    {
-      username: normalizeString(user?.username, "admin") || "admin",
-      password: normalizeString(user?.password, "admin") || "admin"
-    },
-    { username: "admin", password: "admin" }
+function isValidUserRecord(user) {
+  return !!user?.username && !!user?.password;
+}
+
+async function readUsersCollection() {
+  const ctx = await getFirestoreContext();
+
+  if (!ctx.connected || !ctx.db || !ctx.fns) {
+    throw new Error("Firestore unavailable while loading users.");
+  }
+
+  const { collection, getDocs } = ctx.fns;
+  const snap = await getDocs(collection(ctx.db, COLLECTIONS.users));
+
+  return snap.docs
+    .map(docSnap => normalizeUserRecord({ id: docSnap.id, ...docSnap.data() }))
+    .filter(isValidUserRecord)
+    .sort((a, b) => a.username.localeCompare(b.username));
+}
+
+async function writeUsersCollection(users) {
+  const ctx = await getFirestoreContext();
+
+  if (!ctx.connected || !ctx.db || !ctx.fns) {
+    throw new Error("Firestore unavailable while saving users.");
+  }
+
+  const { collection, getDocs, doc, writeBatch, serverTimestamp } = ctx.fns;
+  const cleanUsers = Array.isArray(users)
+    ? users.map(normalizeUserRecord).filter(isValidUserRecord)
+    : [];
+
+  const usersRef = collection(ctx.db, COLLECTIONS.users);
+  const existingSnap = await getDocs(usersRef);
+  const batch = writeBatch(ctx.db);
+
+  const nextIds = new Set(cleanUsers.map(user => String(user.id)));
+
+  existingSnap.forEach(docSnap => {
+    if (!nextIds.has(String(docSnap.id))) {
+      batch.delete(docSnap.ref);
+    }
+  });
+
+  cleanUsers.forEach(user => {
+    const userRef = doc(ctx.db, COLLECTIONS.users, String(user.id));
+    batch.set(
+      userRef,
+      {
+        username: user.username,
+        password: user.password,
+        role: user.role,
+        active: user.active,
+        updatedAt: serverTimestamp()
+      },
+      { merge: true }
+    );
+  });
+
+  await batch.commit();
+  return cleanUsers;
+}
+
+export async function ensureDefaultUser() {
+  try {
+    const users = await readUsersCollection();
+
+    if (users.length) {
+      localStorage.setItem(KEYS.fleetUsersCache, JSON.stringify(users));
+      return users;
+    }
+
+    const legacyUser = getObject(KEYS.fleetUser, null);
+    const migratedUser = normalizeUserRecord({
+      username: legacyUser?.username || "admin",
+      password: legacyUser?.password || "admin",
+      role: "admin",
+      active: true
+    });
+
+    const seeded = await writeUsersCollection([migratedUser]);
+
+    setObject(KEYS.fleetUser, migratedUser, {
+      username: "admin",
+      password: "admin"
+    });
+    localStorage.setItem(KEYS.fleetUsersCache, JSON.stringify(seeded));
+
+    return seeded;
+  } catch (error) {
+    console.error("ensureDefaultUser failed, using local fallback:", error);
+
+    const cachedUsers = getArray(KEYS.fleetUsersCache)
+      .map(normalizeUserRecord)
+      .filter(isValidUserRecord);
+
+    if (cachedUsers.length) {
+      return cachedUsers;
+    }
+
+    const fallback = normalizeUserRecord({
+      username: "admin",
+      password: "admin",
+      role: "admin",
+      active: true
+    });
+
+    setObject(KEYS.fleetUser, fallback, {
+      username: "admin",
+      password: "admin"
+    });
+    setArray(KEYS.fleetUsersCache, [fallback]);
+
+    return [fallback];
+  }
+}
+
+export async function loadUsers() {
+  try {
+    const users = await readUsersCollection();
+    setArray(KEYS.fleetUsersCache, users);
+    return users;
+  } catch (error) {
+    console.error("loadUsers failed, falling back to cache:", error);
+    return getArray(KEYS.fleetUsersCache)
+      .map(normalizeUserRecord)
+      .filter(isValidUserRecord);
+  }
+}
+
+export async function saveUsers(users) {
+  const cleanUsers = Array.isArray(users)
+    ? users.map(normalizeUserRecord).filter(isValidUserRecord)
+    : [];
+
+  const adminCount = cleanUsers.filter(
+    user => user.role === "admin" && user.active
+  ).length;
+
+  if (adminCount === 0) {
+    throw new Error("At least one active admin user is required.");
+  }
+
+  try {
+    const saved = await writeUsersCollection(cleanUsers);
+    setArray(KEYS.fleetUsersCache, saved);
+    return saved;
+  } catch (error) {
+    console.error("saveUsers failed, caching locally:", error);
+    setArray(KEYS.fleetUsersCache, cleanUsers);
+    return cleanUsers;
+  }
+}
+
+export async function validateUserCredentials(username, password) {
+  const cleanUsername = normalizeString(username).trim();
+  const cleanPassword = normalizeString(password);
+
+  if (!cleanUsername || !cleanPassword) {
+    return null;
+  }
+
+  const users = await loadUsers();
+
+  return (
+    users.find(
+      user =>
+        user.active &&
+        user.username === cleanUsername &&
+        user.password === cleanPassword
+    ) || null
   );
+}
+
+export async function updateUserPassword(username, newPassword) {
+  const cleanUsername = normalizeString(username).trim();
+  const cleanPassword = normalizeString(newPassword);
+
+  if (!cleanUsername || !cleanPassword) {
+    throw new Error("Username and password are required.");
+  }
+
+  const users = await loadUsers();
+  const targetExists = users.some(user => user.username === cleanUsername);
+
+  if (!targetExists) {
+    throw new Error(`User "${cleanUsername}" was not found.`);
+  }
+
+  const nextUsers = users.map(user =>
+    user.username === cleanUsername
+      ? { ...user, password: cleanPassword }
+      : user
+  );
+
+  return saveUsers(nextUsers);
+}
+
+export function getLoggedInUsername() {
+  return normalizeString(localStorage.getItem(KEYS.fleetLoggedInUser));
 }
 
 export function setLoggedIn(username = "") {
@@ -440,6 +624,26 @@ export function isLoggedIn() {
 export function clearLoggedIn() {
   localStorage.removeItem(KEYS.fleetLoggedIn);
   localStorage.removeItem(KEYS.fleetLoggedInUser);
+}
+
+/* Backward-compatible helpers for older code paths */
+export function getStoredUser() {
+  const cached = getObject(KEYS.fleetUser, { username: "admin", password: "admin" });
+  return {
+    username: normalizeString(cached?.username, "admin") || "admin",
+    password: normalizeString(cached?.password, "admin") || "admin"
+  };
+}
+
+export function saveStoredUser(user) {
+  setObject(
+    KEYS.fleetUser,
+    {
+      username: normalizeString(user?.username, "admin") || "admin",
+      password: normalizeString(user?.password, "admin") || "admin"
+    },
+    { username: "admin", password: "admin" }
+  );
 }
 
 /* -------------------------
@@ -702,6 +906,7 @@ export async function migrateLocalDataToFirestore() {
   await saveInventory(localInventory);
   await saveVendors(localVendors);
   await savePurchaseOrders(localPurchaseOrders);
+  await ensureDefaultUser();
 
   return {
     success: true,

@@ -271,6 +271,7 @@ button:disabled,
 #deleteSelectedVendorBtn,
 #deleteSelectedPOBtn,
 #restoreSelectedEquipmentBtn,
+#addUserBtn,
 .primaryBtn {
   background: var(--primary);
   color: #fff;
@@ -295,6 +296,7 @@ button:disabled,
 #deleteSelectedVendorBtn:hover,
 #deleteSelectedPOBtn:hover,
 #restoreSelectedEquipmentBtn:hover,
+#addUserBtn:hover,
 .primaryBtn:hover {
   background: var(--primary-dark);
   border-color: var(--primary-dark);
@@ -976,6 +978,83 @@ button.secondary {
 .importIssueText {
   font-size: 12px;
   color: var(--muted);
+}
+
+/* USER MANAGEMENT */
+#userManagementSection {
+  margin-top: 18px;
+  padding-top: 4px;
+}
+
+#userManagementSection h3 {
+  margin: 0 0 12px;
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--primary-dark);
+}
+
+#usersList {
+  display: grid;
+  gap: 10px;
+  margin-bottom: 14px;
+}
+
+.userRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft);
+  box-shadow: var(--shadow);
+}
+
+.userRow strong {
+  color: var(--text);
+  font-size: 14px;
+}
+
+.userRow span {
+  color: var(--muted);
+  font-size: 13px;
+}
+
+.userRow .formButtons {
+  flex-wrap: nowrap;
+}
+
+.settingsGrid {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.settingsGrid > div {
+  min-width: 0;
+}
+
+.settingsGrid input,
+.settingsGrid select {
+  margin-bottom: 0;
+}
+
+#addUserBtn,
+#refreshUsersBtn,
+#manageUsersBtn {
+  min-height: 34px;
+}
+
+#refreshUsersBtn {
+  background: #fff;
+  color: var(--text);
+  border-color: var(--border-strong);
+}
+
+#refreshUsersBtn:hover {
+  background: #f7f9fb;
 }
 
 /* CARDS */
@@ -1944,6 +2023,20 @@ tbody tr:last-child td {
 
   #deletedEquipmentPanel {
     width: 100%;
+  }
+
+  .settingsGrid {
+    grid-template-columns: 1fr;
+  }
+
+  .userRow {
+    flex-direction: column;
+    align-items: flex-start;
+  }
+
+  .userRow .formButtons {
+    width: 100%;
+    flex-wrap: wrap;
   }
 }
 

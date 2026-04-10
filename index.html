@@ -43,6 +43,7 @@
           <div id="settingsDropdown" class="settingsDropdown">
             <button id="openSettingsBtn" type="button">Open Settings</button>
             <button id="openServicesBtn" type="button">Services</button>
+            <button id="manageUsersBtn" type="button">Manage Users</button>
             <button id="changePasswordBtn" type="button">Change Password</button>
             <button id="logoutBtn" type="button">Logout</button>
           </div>
@@ -759,6 +760,39 @@
             <button id="saveSettingsBtn" type="button">Save Settings</button>
             <button id="closeSettingsBtn" type="button">Close</button>
           </div>
+
+          <hr />
+
+          <section id="userManagementSection">
+            <h3>User Accounts</h3>
+
+            <div id="usersList"></div>
+
+            <div class="settingsGrid">
+              <div>
+                <label for="newUserUsernameInput">New Username</label>
+                <input id="newUserUsernameInput" type="text" placeholder="Username" />
+              </div>
+
+              <div>
+                <label for="newUserPasswordInput">New Password</label>
+                <input id="newUserPasswordInput" type="password" placeholder="Password" />
+              </div>
+
+              <div>
+                <label for="newUserRoleSelect">Role</label>
+                <select id="newUserRoleSelect">
+                  <option value="user">User</option>
+                  <option value="admin">Admin</option>
+                </select>
+              </div>
+            </div>
+
+            <div class="formButtons">
+              <button id="addUserBtn" type="button">Add User</button>
+              <button id="refreshUsersBtn" type="button">Refresh Users</button>
+            </div>
+          </section>
         </aside>
 
         <div id="servicesPanel" class="sidePanel servicesSidePanel">
