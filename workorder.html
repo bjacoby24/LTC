@@ -1,0 +1,179 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Work Order</title>
+  <link rel="stylesheet" href="workorder.css" />
+</head>
+<body>
+  <div class="woPage">
+    <input type="hidden" id="woStatus" value="Open" />
+
+    <header class="woTopbar">
+      <div class="woTopbarLeft">
+        <button id="backBtn" type="button" class="iconBtn">←</button>
+        <div>
+          <h1 id="woNumberText">WO-0001</h1>
+          <p class="woSubLabel">Work Order</p>
+        </div>
+      </div>
+
+      <div class="woTopbarRight">
+        <div class="statusPills">
+          <button type="button" class="statusPill" data-status-value="Open">Open</button>
+          <button type="button" class="statusPill" data-status-value="In Progress">In Progress</button>
+          <button type="button" class="statusPill" data-status-value="Manager Review">Manager Review</button>
+          <button type="button" class="statusPill" data-status-value="Completed">Completed</button>
+        </div>
+
+        <div class="actionButtons">
+          <span id="saveStatus" class="saveStatus saved">Saved</span>
+          <button id="printBtn" type="button">Print</button>
+          <button id="deleteBtn" type="button" class="danger">Delete</button>
+        </div>
+      </div>
+    </header>
+
+    <div class="woLayout">
+      <main class="woMain">
+        <section class="card">
+          <div class="cardHeader">
+            <div>
+              <h2>Work Order Details</h2>
+              <p class="sectionSubtext">Primary work order information and equipment details.</p>
+            </div>
+          </div>
+
+          <div class="formGrid formGrid3">
+            <div class="fieldGroup">
+              <label for="woEquipmentNumber">Equipment</label>
+              <input id="woEquipmentNumber" placeholder="Enter equipment number" />
+              <div id="equipmentMatchInfo" class="fieldHelpText">Enter an equipment number.</div>
+            </div>
+
+            <div class="fieldGroup">
+              <label for="woAssignee">Assignee</label>
+              <input id="woAssignee" placeholder="Assign technician" />
+            </div>
+
+            <div class="fieldGroup">
+              <label for="woStarted">Started</label>
+              <input id="woStarted" type="datetime-local" />
+            </div>
+
+            <div class="fieldGroup">
+              <label for="woType">Type</label>
+              <input id="woType" placeholder="Type" />
+            </div>
+
+            <div class="fieldGroup">
+              <label for="repairLocation">Repair Location</label>
+              <input id="repairLocation" placeholder="Repair location" />
+            </div>
+
+            <div class="fieldGroup">
+              <label for="meter">Meter</label>
+              <input id="meter" placeholder="Meter" />
+            </div>
+
+            <div class="fieldGroup">
+              <label for="woDate">Opened</label>
+              <input id="woDate" type="date" />
+            </div>
+
+            <div class="fieldGroup">
+              <label for="woClosed">Closed</label>
+              <input id="woClosed" type="date" />
+            </div>
+
+            <div class="fieldGroup">
+              <label for="woCompleted">Completed</label>
+              <input id="woCompleted" type="date" />
+            </div>
+          </div>
+        </section>
+
+        <section class="card">
+          <div class="cardHeader">
+            <div>
+              <h2>Tasks</h2>
+              <p class="sectionSubtext">Add each service task, labor, and parts used.</p>
+            </div>
+            <button id="addTaskBtn" type="button" class="primaryBtn">+ Add Task</button>
+          </div>
+
+          <div id="tasksContainer" class="tasksContainer"></div>
+        </section>
+
+        <section class="card">
+          <div class="cardHeader">
+            <h2>Notes</h2>
+          </div>
+          <textarea id="woNotes" class="notesArea" placeholder="Enter work order notes"></textarea>
+        </section>
+
+        <section class="card">
+          <div class="cardHeader">
+            <div>
+              <h2>Files</h2>
+            </div>
+          </div>
+
+          <div class="attachmentsWrap">
+            <div class="inlineSectionHeader">
+              <button type="button" id="addAttachmentBtn" class="primaryBtn">+ Add Attachment</button>
+            </div>
+
+            <input id="attachmentInput" type="file" multiple style="display: none;" />
+
+            <div id="attachmentHelpText" class="fieldHelpText">
+              Upload photos, PDFs, or documents. Large files may not save well in local storage.
+            </div>
+
+            <div id="attachmentList" class="tasksContainer"></div>
+          </div>
+        </section>
+      </main>
+
+      <aside class="woSidebar">
+        <section class="card stickyCard">
+          <div class="cardHeader">
+            <h2>Totals</h2>
+          </div>
+
+          <div class="totalsList">
+            <div class="totalRow">
+              <span>Task Labor</span>
+              <strong id="summaryLabor">$0.00</strong>
+            </div>
+
+            <div class="totalRow">
+              <span>Task Parts</span>
+              <strong id="summaryParts">$0.00</strong>
+            </div>
+
+            <div class="totalRow totalRowLarge">
+              <span>Total Charges</span>
+              <strong id="grandTotal">$0.00</strong>
+            </div>
+          </div>
+        </section>
+      </aside>
+    </div>
+  </div>
+
+  <div id="attachmentPreviewModal" class="attachmentPreviewModal">
+  <div class="attachmentPreviewDialog">
+    <div class="attachmentPreviewHeader">
+      <h3 id="attachmentPreviewTitle">Preview</h3>
+      <button type="button" id="closeAttachmentPreviewBtn" class="iconBtn">×</button>
+    </div>
+
+    <div id="attachmentPreviewBody" class="attachmentPreviewBody"></div>
+  </div>
+</div>
+
+  <script type="module" src="workorder.js"></script>
+</body>
+</html>

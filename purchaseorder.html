@@ -1,0 +1,143 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Purchase Order</title>
+  <link rel="stylesheet" href="purchaseorder.css" />
+</head>
+<body>
+  <div class="poWindow">
+    <div class="poHeader">
+      <div class="poHeaderTitle">
+        <h2 id="poTitle">Purchase Order</h2>
+        <p class="poSubtitle">Create, track, and receive purchase orders</p>
+      </div>
+
+      <div class="poHeaderButtons">
+        <div id="poSaveStatus" class="saveStatus">Saved</div>
+        <button id="printPOBtn" type="button">Print</button>
+        <button id="deletePOBtn" type="button" class="danger">Delete</button>
+        <button id="savePOBtn" type="button" class="primaryBtn">Save Purchase Order</button>
+      </div>
+    </div>
+
+    <div class="poGrid">
+      <div class="poBox">
+        <h3>Purchase Order Details</h3>
+
+        <label for="poNumber">PO #</label>
+        <input id="poNumber" placeholder="PO #" readonly />
+
+        <label for="vendor">Vendor</label>
+        <input id="vendor" placeholder="Vendor" />
+
+        <label for="date">Date</label>
+        <input id="date" type="date" />
+
+        <label for="status">Status</label>
+        <select id="status">
+          <option value="Open">Open</option>
+          <option value="Ordered">Ordered</option>
+          <option value="Received">Received</option>
+          <option value="Closed">Closed</option>
+        </select>
+      </div>
+
+      <div class="poBox">
+        <h3>Shipping / Notes</h3>
+
+        <label for="shipTo">Ship To</label>
+        <input id="shipTo" placeholder="Ship To" />
+
+        <label for="requestedBy">Requested By</label>
+        <input id="requestedBy" placeholder="Requested By" />
+
+        <label for="notes">Notes</label>
+        <textarea id="notes" placeholder="Notes"></textarea>
+      </div>
+    </div>
+
+    <div class="poItemsSection">
+      <div class="poItemsHeader">
+        <h3>Line Items</h3>
+        <button id="addPOLineBtn" type="button" class="primaryBtn">+ Add Item</button>
+      </div>
+
+      <table id="poItemsTable">
+        <thead>
+          <tr>
+            <th>Qty</th>
+            <th>Item</th>
+            <th>Description</th>
+            <th>Unit Cost</th>
+            <th>Total</th>
+            <th>Received</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody></tbody>
+      </table>
+    </div>
+
+    <div class="poExtraCharges">
+      <div class="poChargeField">
+        <label for="taxAmount">Tax</label>
+        <input id="taxAmount" type="number" step="0.01" value="0" />
+      </div>
+
+      <div class="poChargeField">
+        <label for="shippingAmount">Shipping</label>
+        <input id="shippingAmount" type="number" step="0.01" value="0" />
+      </div>
+    </div>
+
+    <div class="poLowerGrid">
+      <div class="poAttachmentsSection">
+        <div class="poItemsHeader">
+          <h3>Attachments</h3>
+          <button id="addPOAttachmentBtn" type="button">+ Add Attachment</button>
+        </div>
+
+        <input id="poAttachmentInput" type="file" multiple hidden />
+
+        <div id="poAttachmentsEmpty" class="attachmentPlaceholder">
+          No attachments added yet.
+        </div>
+
+        <div id="poAttachmentList" class="attachmentList"></div>
+      </div>
+
+      <div class="poSummaryBox">
+        <div class="poSummaryRow">
+          <span>Subtotal</span>
+          <span id="poSubtotal">$0.00</span>
+        </div>
+
+        <div class="poSummaryRow">
+          <span>Tax</span>
+          <span id="poTaxTotal">$0.00</span>
+        </div>
+
+        <div class="poSummaryRow">
+          <span>Shipping</span>
+          <span id="poShippingTotal">$0.00</span>
+        </div>
+
+        <div class="poGrandTotalBox">
+          <div>Total</div>
+          <div id="poGrandTotal">$0.00</div>
+        </div>
+
+        <div class="poReceiveActions">
+          <button id="receiveIntoInventoryBtn" type="button" class="primaryBtn">
+            Receive Into Inventory
+          </button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+<script type="module" src="purchaseorder.js"></script>
+</body>
+</html>

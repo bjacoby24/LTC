@@ -1,0 +1,157 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>Service Templates</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="service-template.css" />
+</head>
+<body>
+  <div class="templateWindow">
+    <!-- LIST VIEW -->
+    <section id="templateListView" class="templateScreen active">
+      <header class="templateHeader">
+        <div class="templateHeaderLeft">
+          <button id="closeTemplateListBtn" class="iconBtn" type="button" aria-label="Close">←</button>
+          <div class="templateTitleWrap">
+            <h1>Service Templates</h1>
+            <p class="templateSubtitle">Create, edit, and manage service templates.</p>
+          </div>
+        </div>
+
+        <div class="templateHeaderRight">
+          <button id="createTemplateBtn" class="primary" type="button">+ New Template</button>
+        </div>
+      </header>
+
+      <main class="templateTabContent active">
+        <div class="templateCard">
+          <div class="taskSectionHeader">
+            <div>
+              <h2>Saved Templates</h2>
+              <p class="muted">Select a template to edit its tasks, intervals, and location rules.</p>
+            </div>
+          </div>
+
+          <div class="tableWrap">
+            <table id="templateListTable">
+              <thead>
+                <tr>
+                  <th>Template</th>
+                  <th>Primary Meter</th>
+                  <th>Secondary Meter</th>
+                  <th>Tasks</th>
+                  <th>Locations</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="templateListTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+      </main>
+    </section>
+
+    <!-- EDITOR VIEW -->
+    <section id="templateEditorView" class="templateScreen">
+      <header class="templateHeader">
+        <div class="templateHeaderLeft">
+          <button id="backTemplateBtn" class="iconBtn" type="button" aria-label="Back">←</button>
+          <div class="templateTitleWrap">
+            <h1 id="templateTitle">Service Template</h1>
+            <p class="templateSubtitle">Manage service intervals, tasks, and assigned equipment.</p>
+          </div>
+        </div>
+
+        <div class="templateHeaderRight">
+          <button id="saveTemplateBtn" class="primary" type="button">Save</button>
+        </div>
+      </header>
+
+      <nav class="templateTabs">
+        <button class="templateTab active" data-tab="detailsTab" type="button">Details</button>
+        <button class="templateTab" data-tab="equipmentTab" type="button">Equipment</button>
+      </nav>
+
+      <section id="detailsTab" class="templateTabContent active">
+        <div class="templateCard">
+          <div class="templateFormGrid">
+            <div class="fieldGroup fieldGroupWide">
+              <label for="templateName">Template Name</label>
+              <input id="templateName" type="text" placeholder="Enter template name" />
+            </div>
+
+            <div class="fieldGroup">
+              <label for="templatePrimaryMeter">Primary Meter</label>
+              <select id="templatePrimaryMeter">
+                <option value="Miles">Miles</option>
+                <option value="Hours">Hours</option>
+                <option value="Days">Days</option>
+              </select>
+            </div>
+
+            <div class="fieldGroup">
+              <label for="templateSecondaryMeter">Secondary Meter</label>
+              <select id="templateSecondaryMeter">
+                <option value="None">None</option>
+                <option value="Miles">Miles</option>
+                <option value="Hours">Hours</option>
+                <option value="Days">Days</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="templateCard">
+          <div class="taskSectionHeader">
+            <div>
+              <h2>Tasks</h2>
+              <p class="muted">Create and edit task frequencies, notices, and location assignments.</p>
+            </div>
+            <button id="addTemplateTaskBtn" class="primary" type="button">+ Add Task</button>
+          </div>
+
+          <div class="tableWrap">
+            <table id="templateTasksTable">
+              <thead>
+                <tr>
+                  <th>Task</th>
+                  <th>Frequency</th>
+                  <th>Advanced Notice</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody id="templateTasksTableBody"></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="templateCard">
+          <div class="taskSectionHeader">
+            <div>
+              <h2>Task Details</h2>
+              <p class="muted">Edit assigned locations, date tracking, miles tracking, and task relationships directly in this window.</p>
+            </div>
+          </div>
+
+          <div id="templateTaskCards" class="templateTaskCards">
+            <div class="muted">Add a task to configure assigned locations, date tracking, and miles tracking.</div>
+          </div>
+        </div>
+      </section>
+
+      <section id="equipmentTab" class="templateTabContent">
+        <div class="templateCard">
+          <div class="equipmentTabHeader">
+            <h2>Assigned Equipment</h2>
+            <p class="muted">Equipment shown here matches the task location rules in this template.</p>
+          </div>
+          <div id="templateAssignedEquipment"></div>
+        </div>
+      </section>
+    </section>
+  </div>
+
+  <script type="module" src="./service-template.js"></script>
+</body>
+</html>

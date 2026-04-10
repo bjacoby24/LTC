@@ -1,0 +1,428 @@
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #f3f5f7;
+  --bg-soft: #fafbfc;
+  --card: #ffffff;
+  --card-soft: #fafbfc;
+  --border: #d9dee5;
+  --border-strong: #c7d0db;
+  --text: #2f3b4a;
+  --muted: #6f7b8a;
+  --primary: #2e5fa7;
+  --primary-dark: #234b82;
+  --warning: #f28c22;
+  --danger: #d9534f;
+  --success: #43a047;
+  --shadow: 0 2px 8px rgba(16, 24, 40, 0.05);
+  --radius: 8px;
+  --radius-sm: 6px;
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.poWindow {
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 12px 14px;
+}
+
+.poHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+  padding: 12px;
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: var(--radius);
+  box-shadow: var(--shadow);
+}
+
+.poHeaderTitle {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.poHeader h2 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--primary-dark);
+  letter-spacing: 0.04em;
+}
+
+.poSubtitle {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.poHeaderButtons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.saveStatus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.saveStatus.saving {
+  color: #a56a00;
+  border-color: #f0c36d;
+  background: #fff8e8;
+}
+
+.saveStatus.saved {
+  color: #237242;
+  border-color: #b9e0c4;
+  background: #f3fbf6;
+}
+
+.saveStatus.error {
+  color: var(--danger);
+  border-color: #efc1bf;
+  background: #fff5f5;
+}
+
+button {
+  border: 1px solid var(--border-strong);
+  background: #fff;
+  color: var(--text);
+  border-radius: var(--radius-sm);
+  padding: 7px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  transition: 0.15s ease;
+  box-shadow: none;
+}
+
+button:hover {
+  background: #f7f9fb;
+}
+
+.primaryBtn {
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+}
+
+.primaryBtn:hover {
+  background: var(--primary-dark);
+  border-color: var(--primary-dark);
+}
+
+.danger {
+  background: #fff;
+  color: var(--danger);
+  border-color: #efc1bf;
+}
+
+.danger:hover {
+  background: #fff6f6;
+}
+
+.poGrid {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 12px;
+}
+
+.poBox,
+.poItemsSection,
+.poAttachmentsSection,
+.poSummaryBox {
+  border: 1px solid var(--border);
+  background: var(--card);
+  border-radius: var(--radius);
+  padding: 12px;
+  box-shadow: var(--shadow);
+}
+
+.poBox h3,
+.poItemsHeader h3 {
+  margin: 0 0 10px;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+label {
+  display: block;
+  font-size: 11px;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+input,
+select,
+textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 5px;
+  padding: 7px 9px;
+  margin-bottom: 8px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+}
+
+input,
+select {
+  min-height: 32px;
+}
+
+textarea {
+  min-height: 90px;
+  resize: vertical;
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: #8aa8d3;
+  box-shadow: 0 0 0 2px rgba(46, 95, 167, 0.12);
+}
+
+.poItemsSection {
+  margin-top: 12px;
+}
+
+.poItemsHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+#poItemsTable {
+  width: 100%;
+  border-collapse: collapse;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  overflow: hidden;
+}
+
+#poItemsTable th,
+#poItemsTable td {
+  border-bottom: 1px solid var(--border);
+  padding: 8px 10px;
+  text-align: left;
+  vertical-align: middle;
+  font-size: 12px;
+}
+
+#poItemsTable th {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--muted);
+  background: #f3f5f7;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+#poItemsTable tr:last-child td {
+  border-bottom: none;
+}
+
+#poItemsTable input {
+  margin: 0;
+  min-height: 30px;
+  padding: 6px 8px;
+  font-size: 12px;
+}
+
+.poExtraCharges {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 12px;
+  margin-top: 12px;
+  padding: 12px;
+  border: 1px solid var(--border);
+  background: var(--card-soft);
+  border-radius: var(--radius);
+}
+
+.poChargeField {
+  width: 180px;
+  max-width: 100%;
+}
+
+.poLowerGrid {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 320px;
+  gap: 12px;
+  align-items: start;
+  margin-top: 12px;
+}
+
+.attachmentPlaceholder {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  background: #fafbfc;
+}
+
+.attachmentList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.attachmentRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding: 10px;
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: var(--bg-soft);
+}
+
+.attachmentInfo {
+  min-width: 0;
+}
+
+.attachmentName {
+  font-weight: 600;
+  word-break: break-word;
+}
+
+.attachmentMeta {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.poSummaryBox {
+  width: 100%;
+}
+
+.poSummaryRow {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  padding-bottom: 8px;
+  margin-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.poGrandTotalBox {
+  margin-top: 14px;
+  text-align: center;
+  color: var(--primary-dark);
+  font-weight: 700;
+  border-top: 1px solid var(--border);
+  padding-top: 12px;
+}
+
+.poGrandTotalBox #poGrandTotal {
+  font-size: 38px;
+  margin-top: 6px;
+  line-height: 1;
+  color: var(--primary);
+}
+
+.poReceiveActions {
+  margin-top: 14px;
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.removeLineBtn {
+  padding: 6px 10px;
+}
+
+@media print {
+  .poHeaderButtons,
+  #addPOLineBtn,
+  #poItemsTable button,
+  .poExtraCharges,
+  #addPOAttachmentBtn,
+  .poReceiveActions {
+    display: none !important;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .poWindow {
+    padding: 0;
+    max-width: none;
+  }
+
+  .poHeader,
+  .poBox,
+  .poItemsSection,
+  .poAttachmentsSection,
+  .poSummaryBox {
+    box-shadow: none;
+  }
+}
+
+@media (max-width: 1100px) {
+  .poGrid,
+  .poLowerGrid {
+    grid-template-columns: 1fr;
+  }
+}
+
+@media (max-width: 800px) {
+  .poWindow {
+    padding: 10px;
+  }
+
+  .poHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .poItemsHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .poExtraCharges {
+    flex-direction: column;
+  }
+
+  .poChargeField {
+    width: 100%;
+  }
+}

@@ -1,0 +1,632 @@
+* {
+  box-sizing: border-box;
+}
+
+:root {
+  --bg: #f3f5f7;
+  --card: #ffffff;
+  --card-soft: #fafbfc;
+  --border: #d9dee5;
+  --border-strong: #c7d0db;
+  --text: #2f3b4a;
+  --muted: #6f7b8a;
+  --primary: #2e5fa7;
+  --primary-dark: #234b82;
+  --warning: #f28c22;
+  --danger: #d9534f;
+  --success: #43a047;
+  --shadow: 0 2px 8px rgba(16, 24, 40, 0.05);
+}
+
+body {
+  margin: 0;
+  font-family: Arial, sans-serif;
+  background: var(--bg);
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.35;
+}
+
+.woPage {
+  max-width: 1500px;
+  margin: 0 auto;
+  padding: 12px 14px;
+}
+
+.woTopbar {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.woTopbarLeft,
+.woTopbarRight {
+  display: flex;
+  gap: 8px;
+  align-items: flex-start;
+  flex-wrap: wrap;
+}
+
+.woTopbarLeft h1,
+#woNumberText {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 700;
+  color: var(--primary-dark);
+  letter-spacing: 0.04em;
+}
+
+.subtitle {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 12px;
+}
+
+.actionButtons {
+  display: flex;
+  gap: 8px;
+  align-items: center;
+  flex-wrap: wrap;
+}
+
+.saveStatus {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  min-width: 72px;
+  padding: 7px 10px;
+  border-radius: 8px;
+  border: 1px solid var(--border);
+  background: #fff;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.saveStatus.saving {
+  color: #a56a00;
+  border-color: #f0c36d;
+  background: #fff8e8;
+}
+
+.saveStatus.saved {
+  color: #237242;
+  border-color: #b9e0c4;
+  background: #f3fbf6;
+}
+
+.saveStatus.error {
+  color: var(--danger);
+  border-color: #efc1bf;
+  background: #fff5f5;
+}
+
+.iconBtn,
+button {
+  border: 1px solid var(--border-strong);
+  background: #fff;
+  color: var(--text);
+  border-radius: 6px;
+  padding: 7px 12px;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 500;
+  transition: 0.15s ease;
+  box-shadow: none;
+}
+
+button:hover {
+  background: #f7f9fb;
+}
+
+.primaryBtn {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  background: var(--primary);
+  color: #fff;
+  border-color: var(--primary);
+  text-decoration: none;
+}
+
+.primaryBtn:hover {
+  background: var(--primary-dark);
+}
+
+.filePickerBtn {
+  cursor: pointer;
+}
+
+.danger {
+  background: #fff;
+  color: var(--danger);
+  border-color: #e6b8b6;
+}
+
+.danger:hover {
+  background: #fff6f6;
+}
+
+.statusPills {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.statusPill {
+  min-width: 112px;
+  padding: 8px 12px;
+  font-size: 11px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.04em;
+  border-radius: 6px;
+  background: #fff;
+}
+
+.statusPill.active {
+  background: var(--warning);
+  color: #fff;
+  border-color: var(--warning);
+}
+
+.woLayout {
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) 280px;
+  gap: 14px;
+  align-items: start;
+}
+
+.woMain {
+  display: flex;
+  flex-direction: column;
+  gap: 12px;
+}
+
+.woSidebar {
+  min-width: 0;
+}
+
+.card {
+  background: var(--card);
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  padding: 12px;
+  box-shadow: var(--shadow);
+}
+
+.stickyCard {
+  position: sticky;
+  top: 12px;
+}
+
+.cardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.cardHeader h2 {
+  margin: 0;
+  font-size: 14px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.sectionSubtext {
+  margin: 2px 0 0;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+.formGrid {
+  display: grid;
+  gap: 10px;
+}
+
+.formGrid3 {
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+}
+
+.fieldGroup label {
+  display: block;
+  font-size: 11px;
+  margin-bottom: 4px;
+  color: var(--muted);
+  font-weight: 700;
+  text-transform: uppercase;
+  letter-spacing: 0.03em;
+}
+
+.fieldHelpText {
+  margin-top: 4px;
+  color: var(--muted);
+  font-size: 11px;
+}
+
+input,
+select {
+  width: 100%;
+  max-width: 220px;
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 5px;
+  padding: 7px 9px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+  height: 32px;
+}
+
+textarea {
+  width: 100%;
+  border: 1px solid var(--border);
+  background: #fff;
+  border-radius: 5px;
+  padding: 8px 10px;
+  font: inherit;
+  font-size: 12px;
+  color: var(--text);
+}
+
+input:focus,
+select:focus,
+textarea:focus {
+  outline: none;
+  border-color: #8aa8d3;
+  box-shadow: 0 0 0 2px rgba(46, 95, 167, 0.12);
+}
+
+textarea {
+  resize: vertical;
+}
+
+.notesArea {
+  width: 100%;
+  min-height: 100px;
+  max-width: none;
+}
+
+.tasksContainer {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.taskCard {
+  border: 1px solid var(--border);
+  background: var(--card-soft);
+  border-radius: 8px;
+  padding: 10px;
+}
+
+.taskCardHeader {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 10px;
+  margin-bottom: 8px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+}
+
+.taskTitleBlock {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.taskIndex {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--muted);
+  font-weight: 700;
+  letter-spacing: 0.05em;
+}
+
+.taskTitle {
+  font-size: 14px;
+  color: var(--primary);
+  font-weight: 600;
+}
+
+.taskActions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.taskGrid {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 10px;
+  margin-bottom: 10px;
+}
+
+.taskDescriptionWrap {
+  grid-column: span 4;
+}
+
+.taskDescription {
+  width: 100%;
+  max-width: none;
+  min-height: 64px;
+}
+
+.taskTotalsBar {
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 8px;
+  margin-top: 10px;
+}
+
+.taskMetric {
+  border: 1px solid var(--border);
+  border-radius: 6px;
+  background: #fff;
+  padding: 8px 10px;
+}
+
+.taskMetricLabel {
+  font-size: 10px;
+  text-transform: uppercase;
+  color: var(--muted);
+  margin-bottom: 4px;
+  font-weight: 700;
+  letter-spacing: 0.03em;
+}
+
+.taskMetricValue {
+  font-size: 15px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.removeTaskBtn {
+  background: transparent;
+  color: var(--danger);
+  border: 1px solid #efc1bf;
+  box-shadow: none;
+}
+
+.removeTaskBtn:hover {
+  background: #fff6f6;
+}
+
+.totalsList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.totalRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 10px;
+  padding-bottom: 8px;
+  border-bottom: 1px solid var(--border);
+  font-size: 12px;
+}
+
+.totalRowLarge {
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+  border-bottom: none;
+  padding-bottom: 0;
+}
+
+/* ATTACHMENTS */
+.attachmentsSection {
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.attachmentsToolbar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: wrap;
+}
+
+.attachmentPlaceholder {
+  color: var(--muted);
+  font-size: 12px;
+  padding: 10px 12px;
+  border: 1px dashed var(--border-strong);
+  border-radius: 6px;
+  background: #fafbfc;
+}
+
+.attachmentsList {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.attachmentItem {
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: #fff;
+}
+
+.attachmentInfo {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.attachmentName {
+  font-size: 12px;
+  font-weight: 700;
+  color: var(--text);
+  word-break: break-word;
+}
+
+.attachmentMeta {
+  font-size: 11px;
+  color: var(--muted);
+}
+
+.attachmentActions {
+  display: flex;
+  gap: 6px;
+  flex-wrap: wrap;
+}
+
+.attachmentLinkBtn {
+  text-decoration: none;
+}
+
+@media print {
+  .woTopbarRight,
+  #addTaskBtn,
+  .removeTaskBtn,
+  #backBtn,
+  #deleteBtn,
+  #printBtn,
+  #saveStatus,
+  .attachmentsToolbar,
+  .attachmentActions {
+    display: none !important;
+  }
+
+  body {
+    background: #fff;
+  }
+
+  .woPage {
+    padding: 0;
+    max-width: none;
+  }
+
+  .card,
+  .taskCard {
+    box-shadow: none;
+  }
+
+  .woLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .stickyCard {
+    position: static;
+  }
+}
+
+@media (max-width: 1200px) {
+  .woLayout {
+    grid-template-columns: 1fr;
+  }
+
+  .stickyCard {
+    position: static;
+  }
+
+  .formGrid3,
+  .taskGrid,
+  .taskTotalsBar {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .taskDescriptionWrap {
+    grid-column: span 2;
+  }
+}
+
+@media (max-width: 800px) {
+  .woPage {
+    padding: 10px;
+  }
+
+  .woTopbar {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .formGrid3,
+  .taskGrid,
+  .taskTotalsBar {
+    grid-template-columns: 1fr;
+  }
+
+  .taskDescriptionWrap {
+    grid-column: span 1;
+  }
+
+  input,
+  select {
+    width: 100%;
+    max-width: none;
+  }
+
+  .saveStatus {
+    width: 100%;
+    min-width: 0;
+  }
+
+  .taskCardHeader,
+  .attachmentsToolbar,
+  .attachmentItem {
+    flex-direction: column;
+    align-items: stretch;
+  }
+}
+
+.attachmentPreviewModal {
+  position: fixed;
+  inset: 0;
+  background: rgba(20, 29, 40, 0.45);
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  z-index: 2000;
+}
+
+.attachmentPreviewModal.show {
+  display: flex;
+}
+
+.attachmentPreviewDialog {
+  width: min(1000px, 96vw);
+  max-height: 90vh;
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  box-shadow: 0 18px 50px rgba(0, 0, 0, 0.18);
+  overflow: hidden;
+  display: flex;
+  flex-direction: column;
+}
+
+.attachmentPreviewHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 14px;
+  border-bottom: 1px solid var(--border);
+  background: #f8fafc;
+}
+
+.attachmentPreviewHeader h3 {
+  margin: 0;
+  font-size: 16px;
+}
+
+.attachmentPreviewBody {
+  padding: 14px;
+  overflow: auto;
+  background: #fff;
+}
