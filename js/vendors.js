@@ -6,7 +6,8 @@ import {
 } from "./utils.js";
 import {
   loadVendors,
-  saveVendors
+  saveVendors,
+  getLoggedInUser
 } from "./storage.js";
 import {
   getFilteredGridData,
@@ -69,6 +70,9 @@ export async function initVendors() {
   let vendorSelectionMode = false;
   let vendorFilterUiMode = "header";
 
+  let appModalResolver = null;
+  let appModalLastFocus = null;
+
   const DEFAULT_VENDOR_COLUMNS = [
     { key: "name", label: "Vendor", visible: true, sortable: true, filterType: "text", custom: false },
     { key: "contact", label: "Contact", visible: true, sortable: true, filterType: "text", custom: false },
@@ -89,6 +93,160 @@ export async function initVendors() {
     filters: {},
     headerMenuOpenFor: null
   });
+
+  function getCurrentPermissions() {
+  const loggedInUser = getLoggedInUser();
+  const role = String(loggedInUser?.role || "").trim().toLowerCase();
+
+  const permissions =
+    loggedInUser &&
+    typeof loggedInUser === "object" &&
+    loggedInUser.permissions &&
+    typeof loggedInUser.permissions === "object"
+      ? loggedInUser.permissions
+      : {};
+
+  if (role === "admin") {
+    return {
+      vendorsAccess: true,
+      inventoryEdit: true,
+      inventoryDelete: true
+    };
+  }
+
+  return {
+    vendorsAccess: true,
+    inventoryEdit: true,
+    inventoryDelete: false,
+    ...permissions
+  };
+}
+
+  function canViewVendors() {
+    return !!getCurrentPermissions().vendorsAccess;
+  }
+
+  function canEditVendors() {
+    return !!getCurrentPermissions().inventoryEdit;
+  }
+
+  function canDeleteVendors() {
+    return !!getCurrentPermissions().inventoryDelete;
+  }
+
+  async function requirePermission(checkFn, title, message) {
+    if (checkFn()) return true;
+    await showMessageModal(title, message);
+    return false;
+  }
+
+  function applyVendorPermissionUi() {
+    if (dom.openVendorFormBtn) {
+      dom.openVendorFormBtn.style.display = canEditVendors() ? "" : "none";
+    }
+
+    if (dom.deleteSelectedVendorBtn) {
+      dom.deleteSelectedVendorBtn.style.display = canDeleteVendors() ? "" : "none";
+    }
+
+    if (dom.saveVendorBtn) {
+      dom.saveVendorBtn.style.display = canEditVendors() ? "" : "none";
+    }
+
+    if (dom.updateVendorBtn) {
+      dom.updateVendorBtn.style.display = canEditVendors() ? "" : "none";
+    }
+
+    if (dom.deleteVendorBtn) {
+      dom.deleteVendorBtn.style.display = canDeleteVendors() ? "" : "none";
+    }
+  }
+
+  function showAppModal({
+    title = "Message",
+    message = "",
+    confirmText = "OK",
+    cancelText = "",
+    danger = false,
+    showCancel = false
+  } = {}) {
+    const modal = dom.appModal;
+    const titleEl = dom.appModalTitle;
+    const messageEl = dom.appModalMessage;
+    const confirmBtn = dom.appModalConfirmBtn;
+    const cancelBtn = dom.appModalCancelBtn;
+    const closeBtn = dom.appModalCloseBtn;
+
+    if (!modal || !titleEl || !messageEl || !confirmBtn) {
+      return Promise.resolve(showCancel ? false : true);
+    }
+
+    if (appModalResolver) {
+      appModalResolver(false);
+      appModalResolver = null;
+    }
+
+    appModalLastFocus = document.activeElement;
+
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+    confirmBtn.textContent = confirmText || "OK";
+    confirmBtn.classList.toggle("danger", !!danger);
+
+    if (cancelBtn) {
+      cancelBtn.textContent = cancelText || "Cancel";
+      cancelBtn.style.display = showCancel ? "inline-flex" : "none";
+    }
+
+    modal.classList.add("show");
+
+    return new Promise(resolve => {
+      appModalResolver = resolve;
+
+      const finish = result => {
+        if (!appModalResolver) return;
+        const currentResolve = appModalResolver;
+        appModalResolver = null;
+        modal.classList.remove("show");
+        currentResolve(result);
+
+        setTimeout(() => {
+          if (appModalLastFocus && typeof appModalLastFocus.focus === "function") {
+            appModalLastFocus.focus();
+          }
+          appModalLastFocus = null;
+        }, 0);
+      };
+
+      confirmBtn.onclick = () => finish(true);
+      if (cancelBtn) cancelBtn.onclick = () => finish(false);
+      if (closeBtn) closeBtn.onclick = () => finish(false);
+      modal.onclick = event => {
+        if (event.target === modal) finish(false);
+      };
+    });
+  }
+
+  function showMessageModal(title, message, options = {}) {
+    return showAppModal({
+      title,
+      message,
+      confirmText: options.confirmText || "OK",
+      danger: !!options.danger,
+      showCancel: false
+    });
+  }
+
+  function showConfirmModal(title, message, options = {}) {
+    return showAppModal({
+      title,
+      message,
+      confirmText: options.confirmText || "Confirm",
+      cancelText: options.cancelText || "Cancel",
+      danger: !!options.danger,
+      showCancel: true
+    });
+  }
 
   async function hydrateVendors() {
     try {
@@ -149,13 +307,13 @@ export async function initVendors() {
 
   function toggleVendorButtons(mode) {
     if (dom.saveVendorBtn) {
-      dom.saveVendorBtn.style.display = mode === "save" ? "inline-block" : "none";
+      dom.saveVendorBtn.style.display = mode === "save" && canEditVendors() ? "inline-block" : "none";
     }
     if (dom.updateVendorBtn) {
-      dom.updateVendorBtn.style.display = mode === "edit" ? "inline-block" : "none";
+      dom.updateVendorBtn.style.display = mode === "edit" && canEditVendors() ? "inline-block" : "none";
     }
     if (dom.deleteVendorBtn) {
-      dom.deleteVendorBtn.style.display = mode === "edit" ? "inline-block" : "none";
+      dom.deleteVendorBtn.style.display = mode === "edit" && canDeleteVendors() ? "inline-block" : "none";
     }
   }
 
@@ -210,7 +368,15 @@ export async function initVendors() {
     };
   }
 
-  function openVendorForm(vendorId = null) {
+  async function openVendorForm(vendorId = null) {
+    if (!(await requirePermission(
+      canEditVendors,
+      "Permission Required",
+      "You do not have permission to edit vendors."
+    ))) {
+      return;
+    }
+
     if (!dom.vendorFormPanel) return;
 
     dom.vendorFormPanel.style.display = "block";
@@ -246,10 +412,18 @@ export async function initVendors() {
   }
 
   async function saveVendorRecord() {
+    if (!(await requirePermission(
+      canEditVendors,
+      "Permission Required",
+      "You do not have permission to add vendors."
+    ))) {
+      return;
+    }
+
     const record = buildVendorRecord();
 
     if (!normalizeText(record.name)) {
-      alert("Please enter a vendor name.");
+      await showMessageModal("Missing Vendor Name", "Please enter a vendor name.");
       return;
     }
 
@@ -260,6 +434,14 @@ export async function initVendors() {
   }
 
   async function updateVendorRecord() {
+    if (!(await requirePermission(
+      canEditVendors,
+      "Permission Required",
+      "You do not have permission to edit vendors."
+    ))) {
+      return;
+    }
+
     if (editingVendorId == null) return;
 
     const index = vendors.findIndex(entry => String(entry.id) === String(editingVendorId));
@@ -268,7 +450,7 @@ export async function initVendors() {
     const record = buildVendorRecord(vendors[index].id);
 
     if (!normalizeText(record.name)) {
-      alert("Please enter a vendor name.");
+      await showMessageModal("Missing Vendor Name", "Please enter a vendor name.");
       return;
     }
 
@@ -279,9 +461,25 @@ export async function initVendors() {
   }
 
   async function deleteVendorRecord() {
+    if (!(await requirePermission(
+      canDeleteVendors,
+      "Permission Required",
+      "You do not have permission to delete vendors."
+    ))) {
+      return;
+    }
+
     if (editingVendorId == null) return;
 
-    const confirmed = confirm("Delete this vendor?");
+    const confirmed = await showConfirmModal(
+      "Delete Vendor",
+      "Delete this vendor?",
+      {
+        confirmText: "Delete",
+        cancelText: "Cancel",
+        danger: true
+      }
+    );
     if (!confirmed) return;
 
     vendors = vendors.filter(entry => String(entry.id) !== String(editingVendorId));
@@ -303,6 +501,7 @@ export async function initVendors() {
   }
 
   function enterVendorSelectionMode() {
+    if (!canDeleteVendors()) return;
     vendorSelectionMode = true;
     refreshVendorSelectionUi();
     renderVendorsGrid();
@@ -318,17 +517,33 @@ export async function initVendors() {
   }
 
   async function deleteSelectedVendors() {
+    if (!(await requirePermission(
+      canDeleteVendors,
+      "Permission Required",
+      "You do not have permission to delete vendors."
+    ))) {
+      return;
+    }
+
     if (!vendorSelectionMode) {
       enterVendorSelectionMode();
       return;
     }
 
     if (selectedVendorIds.size === 0) {
-      alert("Select vendors to delete.");
+      await showMessageModal("No Vendors Selected", "Select vendors to delete.");
       return;
     }
 
-    const confirmed = confirm(`Delete ${selectedVendorIds.size} selected vendor(s)?`);
+    const confirmed = await showConfirmModal(
+      "Delete Vendors",
+      `Delete ${selectedVendorIds.size} selected vendor(s)?`,
+      {
+        confirmText: "Delete",
+        cancelText: "Cancel",
+        danger: true
+      }
+    );
     if (!confirmed) return;
 
     vendors = vendors.filter(vendor => !selectedVendorIds.has(String(vendor.id)));
@@ -353,7 +568,7 @@ export async function initVendors() {
   function renderVendorsGrid() {
     if (!dom.vendorsTableBody) return;
 
-    const normalizedRows = getFilteredNormalizedVendors();
+    const normalizedRows = canViewVendors() ? getFilteredNormalizedVendors() : [];
 
     renderGridHeaderGeneric({
       table: dom.vendorsTable,
@@ -362,7 +577,7 @@ export async function initVendors() {
       columns: vendorColumns,
       gridState: vendorGridState,
       filterUiMode: vendorFilterUiMode,
-      selectionMode: vendorSelectionMode,
+      selectionMode: vendorSelectionMode && canDeleteVendors(),
       selectAllCheckboxId: "selectAllVendorsCheckbox",
       visibleRows: normalizedRows,
       selectedSet: selectedVendorIds,
@@ -374,11 +589,20 @@ export async function initVendors() {
 
     dom.vendorsTableBody.innerHTML = "";
 
+    if (!canViewVendors()) {
+      const row = document.createElement("tr");
+      row.innerHTML = `<td colspan="${Math.max(1, vendorColumns.filter(col => col.visible).length + 1)}" class="emptyCell">You do not have permission to view vendors.</td>`;
+      dom.vendorsTableBody.appendChild(row);
+      setGridResultCount(dom.vendorsResultCount, []);
+      refreshVendorSelectionUi();
+      return;
+    }
+
     normalizedRows.forEach(vendor => {
       const row = document.createElement("tr");
       row.dataset.vendorId = vendor.id;
 
-      if (vendorSelectionMode) {
+      if (vendorSelectionMode && canDeleteVendors()) {
         const selectTd = document.createElement("td");
         selectTd.className = "selectColumnCell";
 
@@ -405,12 +629,12 @@ export async function initVendors() {
           row.appendChild(td);
         });
 
-      row.addEventListener("click", () => {
-        if (vendorSelectionMode) {
+      row.addEventListener("click", async () => {
+        if (vendorSelectionMode && canDeleteVendors()) {
           toggleRowSelection(selectedVendorIds, vendor.id);
           renderVendorsGrid();
         } else {
-          openVendorForm(vendor.id);
+          await openVendorForm(vendor.id);
         }
       });
 
@@ -486,14 +710,27 @@ export async function initVendors() {
         }
       });
     }
+
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        if (dom.appModal?.classList.contains("show") && appModalResolver) {
+          const resolver = appModalResolver;
+          appModalResolver = null;
+          dom.appModal.classList.remove("show");
+          resolver(false);
+        }
+      }
+    });
   }
 
   bindEvents();
   await hydrateVendors();
+  applyVendorPermissionUi();
   renderVendorsGrid();
 
   return {
     renderVendorsGrid,
-    openVendorForm
+    openVendorForm,
+    applyVendorPermissionUi
   };
 }

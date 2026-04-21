@@ -7,7 +7,8 @@ import {
   loadEquipment,
   loadDeletedEquipment,
   saveEquipment,
-  saveDeletedEquipment
+  saveDeletedEquipment,
+  getLoggedInUser
 } from "./storage.js";
 import {
   getFilteredGridData,
@@ -78,6 +79,9 @@ export async function initDeletedEquipment() {
   let deletedEquipmentSelectionMode = false;
   let deletedEquipmentFilterUiMode = "header";
 
+  let appModalResolver = null;
+  let appModalLastFocus = null;
+
   const DEFAULT_DELETED_EQUIPMENT_COLUMNS = [
     { key: "unit", label: "Unit", visible: true, sortable: true, filterType: "text", custom: false },
     { key: "type", label: "Type", visible: true, sortable: true, filterType: "select", custom: false },
@@ -87,7 +91,10 @@ export async function initDeletedEquipment() {
     { key: "vin", label: "VIN", visible: false, sortable: true, filterType: "text", custom: false }
   ];
 
-  let deletedEquipmentColumns = loadDeletedEquipmentColumnsLocal(DEFAULT_DELETED_EQUIPMENT_COLUMNS);
+  let deletedEquipmentColumns = loadDeletedEquipmentColumnsLocal(
+    DEFAULT_DELETED_EQUIPMENT_COLUMNS
+  );
+
   let deletedEquipmentGridState = loadDeletedEquipmentGridStateLocal({
     sortKey: "unit",
     sortDirection: "asc",
@@ -95,6 +102,176 @@ export async function initDeletedEquipment() {
     filters: {},
     headerMenuOpenFor: null
   });
+
+  function getCurrentPermissions() {
+  const loggedInUser = getLoggedInUser();
+  const role = String(loggedInUser?.role || "").trim().toLowerCase();
+
+  const permissions =
+    loggedInUser &&
+    typeof loggedInUser === "object" &&
+    loggedInUser.permissions &&
+    typeof loggedInUser.permissions === "object"
+      ? loggedInUser.permissions
+      : {};
+
+  if (role === "admin") {
+    return {
+      deletedEquipmentAccess: true,
+      equipmentEdit: true,
+      equipmentDelete: true
+    };
+  }
+
+  return {
+    deletedEquipmentAccess: false,
+    equipmentEdit: true,
+    equipmentDelete: false,
+    ...permissions
+  };
+}
+
+  function canViewDeletedEquipment() {
+    return !!getCurrentPermissions().deletedEquipmentAccess;
+  }
+
+  function canRestoreDeletedEquipment() {
+    return !!getCurrentPermissions().equipmentEdit;
+  }
+
+  function canPermanentlyDeleteDeletedEquipment() {
+    return !!getCurrentPermissions().equipmentDelete;
+  }
+
+  async function requirePermission(checkFn, title, message) {
+    if (checkFn()) return true;
+    await showMessageModal(title, message);
+    return false;
+  }
+
+  function applyDeletedEquipmentPermissionUi() {
+    const canView = canViewDeletedEquipment();
+    const canRestore = canRestoreDeletedEquipment();
+    const canDelete = canPermanentlyDeleteDeletedEquipment();
+
+    if (dom.restoreSelectedEquipmentBtn) {
+      dom.restoreSelectedEquipmentBtn.style.display = canView && canRestore ? "" : "none";
+    }
+
+    if (dom.permanentlyDeleteSelectedEquipmentBtn) {
+      dom.permanentlyDeleteSelectedEquipmentBtn.style.display = canView && canDelete ? "" : "none";
+    }
+
+    if (dom.cancelDeletedSelectionBtn) {
+      dom.cancelDeletedSelectionBtn.style.display = "none";
+    }
+
+    if (dom.restoreDeletedEquipmentBtn) {
+      dom.restoreDeletedEquipmentBtn.style.display = canView && canRestore ? "" : "none";
+    }
+
+    if (dom.permanentlyDeleteEquipmentBtn) {
+      dom.permanentlyDeleteEquipmentBtn.style.display = canView && canDelete ? "" : "none";
+    }
+  }
+
+  function showAppModal({
+    title = "Message",
+    message = "",
+    confirmText = "OK",
+    cancelText = "",
+    danger = false,
+    showCancel = false
+  } = {}) {
+    const modal = dom.appModal;
+    const titleEl = dom.appModalTitle;
+    const messageEl = dom.appModalMessage;
+    const confirmBtn = dom.appModalConfirmBtn;
+    const cancelBtn = dom.appModalCancelBtn;
+    const closeBtn = dom.appModalCloseBtn;
+
+    if (!modal || !titleEl || !messageEl || !confirmBtn) {
+      console.warn("App modal elements are missing.");
+      return Promise.resolve(showCancel ? false : true);
+    }
+
+    if (appModalResolver) {
+      appModalResolver(false);
+      appModalResolver = null;
+    }
+
+    appModalLastFocus = document.activeElement;
+
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+    confirmBtn.textContent = confirmText || "OK";
+    confirmBtn.classList.toggle("danger", !!danger);
+
+    if (cancelBtn) {
+      cancelBtn.textContent = cancelText || "Cancel";
+      cancelBtn.style.display = showCancel ? "inline-flex" : "none";
+    }
+
+    modal.classList.add("show");
+
+    return new Promise(resolve => {
+      appModalResolver = resolve;
+
+      const finish = result => {
+        if (!appModalResolver) return;
+        const currentResolve = appModalResolver;
+        appModalResolver = null;
+        modal.classList.remove("show");
+        currentResolve(result);
+
+        setTimeout(() => {
+          if (appModalLastFocus && typeof appModalLastFocus.focus === "function") {
+            appModalLastFocus.focus();
+          }
+          appModalLastFocus = null;
+        }, 0);
+      };
+
+      confirmBtn.onclick = () => finish(true);
+
+      if (cancelBtn) {
+        cancelBtn.onclick = () => finish(false);
+      }
+
+      if (closeBtn) {
+        closeBtn.onclick = () => finish(false);
+      }
+
+      modal.onclick = event => {
+        if (event.target === modal) {
+          finish(false);
+        }
+      };
+
+      setTimeout(() => confirmBtn.focus(), 20);
+    });
+  }
+
+  function showMessageModal(title, message, options = {}) {
+    return showAppModal({
+      title,
+      message,
+      confirmText: options.confirmText || "OK",
+      danger: !!options.danger,
+      showCancel: false
+    });
+  }
+
+  function showConfirmModal(title, message, options = {}) {
+    return showAppModal({
+      title,
+      message,
+      confirmText: options.confirmText || "Confirm",
+      cancelText: options.cancelText || "Cancel",
+      danger: !!options.danger,
+      showCancel: true
+    });
+  }
 
   async function hydrateDeletedEquipmentData() {
     try {
@@ -125,6 +302,12 @@ export async function initDeletedEquipment() {
       deletedEquipmentColumns,
       deletedEquipmentGridState
     );
+  }
+
+  function suppressLiveReload(ms = 3000) {
+    if (typeof window.suppressFleetLiveReload === "function") {
+      window.suppressFleetLiveReload(ms);
+    }
   }
 
   function getFilteredDeletedEquipmentData() {
@@ -162,7 +345,15 @@ export async function initDeletedEquipment() {
     renderDeletedEquipment();
   }
 
-  function showDeletedEquipment(equipmentId) {
+  async function showDeletedEquipment(equipmentId) {
+    if (!(await requirePermission(
+      canViewDeletedEquipment,
+      "Permission Required",
+      "You do not have permission to view deleted equipment."
+    ))) {
+      return;
+    }
+
     const eq = deletedEquipment.find(e => String(e.id) === String(equipmentId));
     if (!eq) return;
 
@@ -188,12 +379,24 @@ export async function initDeletedEquipment() {
   }
 
   async function restoreDeletedEquipment(id) {
-    const eq = deletedEquipment.find(e => String(e.id) === String(id));
+    if (!(await requirePermission(
+      canRestoreDeletedEquipment,
+      "Permission Required",
+      "You do not have permission to restore deleted equipment."
+    ))) {
+      return;
+    }
+
+    const normalizedId = String(id);
+    const eq = deletedEquipment.find(e => String(e.id) === normalizedId);
     if (!eq) return;
 
     equipmentList.push(eq);
-    deletedEquipment = deletedEquipment.filter(e => String(e.id) !== String(id));
+    deletedEquipment = deletedEquipment.filter(
+      e => String(e.id) !== normalizedId
+    );
 
+    suppressLiveReload(3500);
     await persistEquipment();
     await persistDeletedEquipment();
 
@@ -206,10 +409,33 @@ export async function initDeletedEquipment() {
   }
 
   async function permanentlyDeleteEquipment(id) {
-    const confirmed = confirm("Permanently delete this equipment?");
+    if (!(await requirePermission(
+      canPermanentlyDeleteDeletedEquipment,
+      "Permission Required",
+      "You do not have permission to permanently delete equipment."
+    ))) {
+      return;
+    }
+
+    const normalizedId = String(id);
+
+    const confirmed = await showConfirmModal(
+      "Delete Equipment Permanently",
+      "Permanently delete this equipment?",
+      {
+        confirmText: "Delete",
+        cancelText: "Cancel",
+        danger: true
+      }
+    );
+
     if (!confirmed) return;
 
-    deletedEquipment = deletedEquipment.filter(e => String(e.id) !== String(id));
+    deletedEquipment = deletedEquipment.filter(
+      e => String(e.id) !== normalizedId
+    );
+
+    suppressLiveReload(3500);
     await persistDeletedEquipment();
 
     if (dom.deletedEquipmentPanel) {
@@ -221,50 +447,83 @@ export async function initDeletedEquipment() {
   }
 
   async function restoreSelectedDeletedEquipment() {
+    if (!(await requirePermission(
+      canRestoreDeletedEquipment,
+      "Permission Required",
+      "You do not have permission to restore deleted equipment."
+    ))) {
+      return;
+    }
+
     if (!deletedEquipmentSelectionMode) {
       enterDeletedEquipmentSelectionMode();
       return;
     }
 
     if (selectedDeletedEquipmentIds.size === 0) {
-      alert("Select equipment to restore.");
+      await showMessageModal("No Equipment Selected", "Select equipment to restore.");
       return;
     }
 
+    const normalizedSelectedIds = new Set(
+      [...selectedDeletedEquipmentIds].map(id => String(id))
+    );
+
     const recordsToRestore = deletedEquipment.filter(eq =>
-      selectedDeletedEquipmentIds.has(String(eq.id))
+      normalizedSelectedIds.has(String(eq.id))
     );
 
     equipmentList.push(...recordsToRestore);
-    deletedEquipment = deletedEquipment.filter(eq =>
-      !selectedDeletedEquipmentIds.has(String(eq.id))
+    deletedEquipment = deletedEquipment.filter(
+      eq => !normalizedSelectedIds.has(String(eq.id))
     );
 
+    suppressLiveReload(3500);
     await persistEquipment();
     await persistDeletedEquipment();
     exitDeletedEquipmentSelectionMode(true);
   }
 
   async function permanentlyDeleteSelectedDeletedEquipment() {
+    if (!(await requirePermission(
+      canPermanentlyDeleteDeletedEquipment,
+      "Permission Required",
+      "You do not have permission to permanently delete equipment."
+    ))) {
+      return;
+    }
+
     if (!deletedEquipmentSelectionMode) {
       enterDeletedEquipmentSelectionMode();
       return;
     }
 
     if (selectedDeletedEquipmentIds.size === 0) {
-      alert("Select equipment to permanently delete.");
+      await showMessageModal("No Equipment Selected", "Select equipment to permanently delete.");
       return;
     }
 
-    const confirmed = confirm(
-      `Permanently delete ${selectedDeletedEquipmentIds.size} selected equipment item(s)?`
+    const confirmed = await showConfirmModal(
+      "Delete Equipment Permanently",
+      `Permanently delete ${selectedDeletedEquipmentIds.size} selected equipment item(s)?`,
+      {
+        confirmText: "Delete",
+        cancelText: "Cancel",
+        danger: true
+      }
     );
+
     if (!confirmed) return;
 
-    deletedEquipment = deletedEquipment.filter(eq =>
-      !selectedDeletedEquipmentIds.has(String(eq.id))
+    const normalizedSelectedIds = new Set(
+      [...selectedDeletedEquipmentIds].map(id => String(id))
     );
 
+    deletedEquipment = deletedEquipment.filter(
+      eq => !normalizedSelectedIds.has(String(eq.id))
+    );
+
+    suppressLiveReload(3500);
     await persistDeletedEquipment();
     exitDeletedEquipmentSelectionMode(true);
   }
@@ -286,7 +545,8 @@ export async function initDeletedEquipment() {
   function renderDeletedEquipment() {
     if (!dom.deletedEquipmentTableBody) return;
 
-    const rows = getFilteredDeletedEquipmentData();
+    const canView = canViewDeletedEquipment();
+    const rows = canView ? getFilteredDeletedEquipmentData() : [];
 
     renderGridHeaderGeneric({
       table: dom.deletedEquipmentTable,
@@ -295,7 +555,7 @@ export async function initDeletedEquipment() {
       columns: deletedEquipmentColumns,
       gridState: deletedEquipmentGridState,
       filterUiMode: deletedEquipmentFilterUiMode,
-      selectionMode: deletedEquipmentSelectionMode,
+      selectionMode: deletedEquipmentSelectionMode && canPermanentlyDeleteDeletedEquipment(),
       selectAllCheckboxId: "selectAllDeletedEquipmentCheckbox",
       visibleRows: rows,
       selectedSet: selectedDeletedEquipmentIds,
@@ -307,22 +567,37 @@ export async function initDeletedEquipment() {
 
     dom.deletedEquipmentTableBody.innerHTML = "";
 
+    if (!canView) {
+      const row = document.createElement("tr");
+      row.innerHTML = `<td colspan="${Math.max(1, deletedEquipmentColumns.filter(col => col.visible).length + 1)}" class="emptyCell">You do not have permission to view deleted equipment.</td>`;
+      dom.deletedEquipmentTableBody.appendChild(row);
+      setGridResultCount(dom.deletedEquipmentResultCount, []);
+      refreshDeletedEquipmentSelectionUi();
+      return;
+    }
+
     rows.forEach(eq => {
       const row = document.createElement("tr");
       row.dataset.deletedEquipmentId = eq.id;
 
-      if (deletedEquipmentSelectionMode) {
+      if (deletedEquipmentSelectionMode && canPermanentlyDeleteDeletedEquipment()) {
         const selectTd = document.createElement("td");
         selectTd.className = "selectColumnCell";
 
         const checkbox = document.createElement("input");
         checkbox.type = "checkbox";
         checkbox.className = "gridRowCheckbox";
-        checkbox.checked = isRowSelected(selectedDeletedEquipmentIds, eq.id);
+        checkbox.checked = isRowSelected(
+          selectedDeletedEquipmentIds,
+          String(eq.id)
+        );
 
         checkbox.addEventListener("click", event => event.stopPropagation());
         checkbox.addEventListener("change", () => {
-          toggleRowSelection(selectedDeletedEquipmentIds, eq.id);
+          toggleRowSelection(
+            selectedDeletedEquipmentIds,
+            String(eq.id)
+          );
           refreshDeletedEquipmentSelectionUi();
         });
 
@@ -338,16 +613,24 @@ export async function initDeletedEquipment() {
           row.appendChild(td);
         });
 
-      row.addEventListener("click", () => {
-        if (deletedEquipmentSelectionMode) {
-          toggleRowSelection(selectedDeletedEquipmentIds, eq.id);
+      row.addEventListener("click", async () => {
+        if (deletedEquipmentSelectionMode && canPermanentlyDeleteDeletedEquipment()) {
+          toggleRowSelection(
+            selectedDeletedEquipmentIds,
+            String(eq.id)
+          );
           renderDeletedEquipment();
         } else {
-          showDeletedEquipment(eq.id);
+          await showDeletedEquipment(eq.id);
         }
       });
 
-      if (isRowSelected(selectedDeletedEquipmentIds, eq.id)) {
+      if (
+        isRowSelected(
+          selectedDeletedEquipmentIds,
+          String(eq.id)
+        )
+      ) {
         row.classList.add("selectedRow");
       }
 
@@ -360,16 +643,22 @@ export async function initDeletedEquipment() {
 
   function bindEvents() {
     if (dom.deletedEquipmentGlobalSearch) {
-      dom.deletedEquipmentGlobalSearch.value = deletedEquipmentGridState.globalSearch || "";
+      dom.deletedEquipmentGlobalSearch.value =
+        deletedEquipmentGridState.globalSearch || "";
+
       dom.deletedEquipmentGlobalSearch.addEventListener("input", () => {
-        deletedEquipmentGridState.globalSearch = dom.deletedEquipmentGlobalSearch.value || "";
+        deletedEquipmentGridState.globalSearch =
+          dom.deletedEquipmentGlobalSearch.value || "";
         persistGrid();
         renderDeletedEquipment();
       });
     }
 
     if (dom.clearDeletedEquipmentFiltersBtn) {
-      dom.clearDeletedEquipmentFiltersBtn.addEventListener("click", clearDeletedEquipmentFilters);
+      dom.clearDeletedEquipmentFiltersBtn.addEventListener(
+        "click",
+        clearDeletedEquipmentFilters
+      );
     }
 
     if (dom.restoreSelectedEquipmentBtn) {
@@ -379,12 +668,9 @@ export async function initDeletedEquipment() {
     }
 
     if (dom.permanentlyDeleteSelectedEquipmentBtn) {
-      dom.permanentlyDeleteSelectedEquipmentBtn.addEventListener(
-        "click",
-        () => {
-          permanentlyDeleteSelectedDeletedEquipment();
-        }
-      );
+      dom.permanentlyDeleteSelectedEquipmentBtn.addEventListener("click", () => {
+        permanentlyDeleteSelectedDeletedEquipment();
+      });
     }
 
     if (dom.cancelDeletedSelectionBtn) {
@@ -408,14 +694,27 @@ export async function initDeletedEquipment() {
         }
       });
     }
+
+    document.addEventListener("keydown", event => {
+      if (event.key === "Escape") {
+        if (dom.appModal?.classList.contains("show") && appModalResolver) {
+          const resolver = appModalResolver;
+          appModalResolver = null;
+          dom.appModal.classList.remove("show");
+          resolver(false);
+        }
+      }
+    });
   }
 
   bindEvents();
   await hydrateDeletedEquipmentData();
+  applyDeletedEquipmentPermissionUi();
   renderDeletedEquipment();
 
   return {
     renderDeletedEquipment,
-    showDeletedEquipment
+    showDeletedEquipment,
+    applyDeletedEquipmentPermissionUi
   };
 }

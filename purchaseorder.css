@@ -426,3 +426,112 @@ textarea:focus {
     width: 100%;
   }
 }
+
+.woAppModal {
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  background: rgba(15, 23, 42, 0.45);
+  z-index: 5000;
+}
+
+.woAppModal.show {
+  display: flex;
+}
+
+.woAppModalCard {
+  width: min(520px, 100%);
+  background: #fff;
+  border: 1px solid var(--border);
+  border-radius: 12px;
+  box-shadow: 0 18px 50px rgba(15, 23, 42, 0.18);
+  overflow: hidden;
+}
+
+.woAppModalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 14px 16px;
+  border-bottom: 1px solid var(--border);
+  background: #fff;
+}
+
+.woAppModalHeader h3 {
+  margin: 0;
+  font-size: 16px;
+  font-weight: 700;
+  color: var(--text);
+}
+
+.woAppModalBody {
+  padding: 16px;
+}
+
+.woAppModalBody p {
+  margin: 0;
+  color: var(--text);
+  font-size: 13px;
+  line-height: 1.45;
+}
+
+.woAppModalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 8px;
+  padding: 14px 16px 16px;
+  border-top: 1px solid var(--border);
+  background: #fff;
+}
+
+.iconBtn {
+  width: 34px;
+  min-width: 34px;
+  height: 34px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.attachmentCard {
+  display: flex;
+  justify-content: space-between;
+  align-items: flex-start;
+  gap: 12px;
+  padding: 10px 12px;
+  border: 1px solid var(--border);
+  border-radius: 8px;
+  background: var(--bg-soft);
+}
+
+.attachmentCardMain {
+  min-width: 0;
+  flex: 1;
+}
+
+.attachmentCardMain strong {
+  display: block;
+  margin-bottom: 4px;
+  word-break: break-word;
+}
+
+.attachmentCardActions {
+  display: flex;
+  gap: 8px;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+}
+
+.fieldHelpText {
+  font-size: 11px;
+  color: var(--muted);
+  line-height: 1.35;
+  word-break: break-word;
+}

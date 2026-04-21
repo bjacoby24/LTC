@@ -20,63 +20,71 @@ let liveSyncState = {
   fns: null
 };
 
+let liveSyncInitPromise = null;
+
 async function getLiveSyncContext() {
   if (liveSyncState.initialized) {
     return liveSyncState;
   }
 
-  try {
-    const firebaseResult = await initFirebase();
-
-    if (!firebaseResult?.connected || !firebaseResult?.db) {
-      throw new Error("Firebase is not connected.");
-    }
-
-    const firestoreModule = await import(
-      "https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js"
-    );
-
-    liveSyncState = {
-      initialized: true,
-      connected: true,
-      db: firebaseResult.db,
-      fns: {
-        doc: firestoreModule.doc,
-        collection: firestoreModule.collection,
-        onSnapshot: firestoreModule.onSnapshot
-      }
-    };
-
-    return liveSyncState;
-  } catch (error) {
-    console.error("[live-sync] Firestore initialization failed:", error);
-
-    liveSyncState = {
-      initialized: true,
-      connected: false,
-      db: null,
-      fns: null
-    };
-
-    return liveSyncState;
+  if (liveSyncInitPromise) {
+    return liveSyncInitPromise;
   }
+
+  liveSyncInitPromise = (async () => {
+    try {
+      const firebaseResult = await initFirebase();
+
+      if (!firebaseResult?.connected || !firebaseResult?.db) {
+        throw new Error("Firebase is not connected.");
+      }
+
+      const firestoreModule = await import(
+        "https://www.gstatic.com/firebasejs/12.2.1/firebase-firestore.js"
+      );
+
+      liveSyncState = {
+        initialized: true,
+        connected: true,
+        db: firebaseResult.db,
+        fns: {
+          doc: firestoreModule.doc,
+          collection: firestoreModule.collection,
+          onSnapshot: firestoreModule.onSnapshot
+        }
+      };
+
+      return liveSyncState;
+    } catch (error) {
+      console.error("[live-sync] Firestore initialization failed:", error);
+
+      liveSyncState = {
+        initialized: true,
+        connected: false,
+        db: null,
+        fns: null
+      };
+
+      return liveSyncState;
+    } finally {
+      liveSyncInitPromise = null;
+    }
+  })();
+
+  return liveSyncInitPromise;
+}
+
+function safeCallback(fn, fallback = () => {}) {
+  return typeof fn === "function" ? fn : fallback;
 }
 
 export async function startLiveSync(options = {}) {
-  const onRemoteChange =
-    typeof options.onRemoteChange === "function"
-      ? options.onRemoteChange
-      : () => {};
-
-  const onReady =
-    typeof options.onReady === "function"
-      ? options.onReady
-      : () => {};
-
-  const onError =
-    typeof options.onError === "function"
-      ? options.onError
-      : error => console.error("[live-sync] listener error:", error);
+  const onRemoteChange = safeCallback(options.onRemoteChange);
+  const onReady = safeCallback(options.onReady);
+  const onError = safeCallback(
+    options.onError,
+    error => console.error("[live-sync] listener error:", error)
+  );
 
   const ctx = await getLiveSyncContext();
 
@@ -90,16 +98,19 @@ export async function startLiveSync(options = {}) {
 
   const unsubscribers = [];
   const initializedKeys = new Set();
+  let isStopped = false;
 
-  function shouldIgnoreInitialSnapshot(key) {
+  function markInitialSnapshotHandled(key) {
     if (!initializedKeys.has(key)) {
       initializedKeys.add(key);
-      return true;
+      return false;
     }
-    return false;
+    return true;
   }
 
   function emitRemoteChange(payload) {
+    if (isStopped) return;
+
     try {
       onRemoteChange(payload);
     } catch (error) {
@@ -107,13 +118,25 @@ export async function startLiveSync(options = {}) {
     }
   }
 
+  function handleListenerError(label, error) {
+    console.error(`[live-sync] ${label} listener error:`, error);
+
+    try {
+      onError(error);
+    } catch (callbackError) {
+      console.error("[live-sync] onError callback failed:", callbackError);
+    }
+  }
+
   function registerDocumentListener(key, ref, label) {
     const unsubscribe = onSnapshot(
       ref,
       snapshot => {
-        if (!snapshot) return;
+        if (!snapshot || isStopped) return;
         if (snapshot.metadata?.hasPendingWrites) return;
-        if (shouldIgnoreInitialSnapshot(key)) return;
+
+        const isReadyForRemoteEvents = markInitialSnapshotHandled(key);
+        if (!isReadyForRemoteEvents) return;
 
         emitRemoteChange({
           key,
@@ -123,10 +146,7 @@ export async function startLiveSync(options = {}) {
           exists: typeof snapshot.exists === "function" ? snapshot.exists() : true
         });
       },
-      error => {
-        console.error(`[live-sync] ${label} listener error:`, error);
-        onError(error);
-      }
+      error => handleListenerError(label, error)
     );
 
     unsubscribers.push(unsubscribe);
@@ -136,33 +156,51 @@ export async function startLiveSync(options = {}) {
     const unsubscribe = onSnapshot(
       ref,
       snapshot => {
-        if (!snapshot) return;
+        if (!snapshot || isStopped) return;
         if (snapshot.metadata?.hasPendingWrites) return;
-        if (shouldIgnoreInitialSnapshot(key)) return;
+
+        const isReadyForRemoteEvents = markInitialSnapshotHandled(key);
+        if (!isReadyForRemoteEvents) return;
+
+        const changes =
+          typeof snapshot.docChanges === "function"
+            ? snapshot.docChanges()
+            : [];
+
+        if (!changes.length) return;
 
         emitRemoteChange({
           key,
           type: "collection",
           label,
           fromCache: !!snapshot.metadata?.fromCache,
-          size: typeof snapshot.size === "number" ? snapshot.size : 0
+          size: typeof snapshot.size === "number" ? snapshot.size : 0,
+          changes: changes.map(change => ({
+            type: change.type,
+            id: change.doc?.id || "",
+            hasPendingWrites: !!change.doc?.metadata?.hasPendingWrites,
+            fromCache: !!change.doc?.metadata?.fromCache
+          }))
         });
       },
-      error => {
-        console.error(`[live-sync] ${label} listener error:`, error);
-        onError(error);
-      }
+      error => handleListenerError(label, error)
     );
 
     unsubscribers.push(unsubscribe);
   }
 
-  const settingsRef = doc(db, SETTINGS_COLLECTION, SETTINGS_DOC);
-  registerDocumentListener("settings", settingsRef, "settings");
+  registerDocumentListener(
+    "settings",
+    doc(db, SETTINGS_COLLECTION, SETTINGS_DOC),
+    "settings"
+  );
 
   for (const collectionName of LIVE_COLLECTIONS) {
-    const collectionRef = collection(db, collectionName);
-    registerCollectionListener(collectionName, collectionRef, collectionName);
+    registerCollectionListener(
+      collectionName,
+      collection(db, collectionName),
+      collectionName
+    );
   }
 
   try {
@@ -176,9 +214,14 @@ export async function startLiveSync(options = {}) {
   console.log("[live-sync] started");
 
   return () => {
+    if (isStopped) return;
+    isStopped = true;
+
     for (const unsubscribe of unsubscribers) {
       try {
-        unsubscribe();
+        if (typeof unsubscribe === "function") {
+          unsubscribe();
+        }
       } catch (error) {
         console.error("[live-sync] unsubscribe failed:", error);
       }

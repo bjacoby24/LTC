@@ -1,0 +1,288 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <title>User Management</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <link rel="stylesheet" href="styles.css" />
+  <link rel="stylesheet" href="users.css" />
+</head>
+<body class="usersWindowBody">
+  <div class="usersWindow">
+    <header class="usersTopbar">
+      <div class="usersTopbarLeft">
+        <h1>User Management</h1>
+        <p>Manage accounts, roles, access, and permissions.</p>
+      </div>
+
+      <div class="usersTopbarActions">
+        <button id="newUserBtn" type="button" class="primaryBtn">+ New User</button>
+        <button id="refreshUsersWindowBtn" type="button">Refresh</button>
+        <button id="closeUsersWindowBtn" type="button">Close</button>
+      </div>
+    </header>
+
+    <div class="usersLayout">
+      <aside class="usersSidebarCard">
+        <div class="usersSidebarHeader">
+          <h2>Accounts</h2>
+        </div>
+
+        <div class="usersSidebarFilters">
+          <input
+            id="usersSearchInput"
+            type="text"
+            placeholder="Search users..."
+            autocomplete="off"
+          />
+
+          <select id="usersRoleFilter">
+            <option value="all">All Roles</option>
+            <option value="admin">Admin</option>
+            <option value="manager">Manager</option>
+            <option value="user">User</option>
+          </select>
+
+          <select id="usersStatusFilter">
+            <option value="all">All Statuses</option>
+            <option value="active">Active</option>
+            <option value="inactive">Inactive</option>
+          </select>
+        </div>
+
+        <div id="usersWindowList" class="usersWindowList">
+          <div class="usersEmptyState">No users loaded.</div>
+        </div>
+      </aside>
+
+      <main class="usersMainPanel">
+        <section class="usersFormCard">
+          <div class="usersSectionHeader">
+            <div>
+              <h2 id="usersEditorTitle">User Details</h2>
+              <p id="usersEditorSubtitle" class="usersSubtext">
+                Select a user to edit or create a new account.
+              </p>
+            </div>
+
+            <div class="usersStatusActions">
+              <span id="selectedUserRoleBadge" class="roleBadge role-user">User</span>
+              <span id="selectedUserStatusBadge" class="statusBadge status-active">Active</span>
+            </div>
+          </div>
+
+          <div class="usersFormGrid">
+            <div class="fieldGroup">
+              <label for="userFirstNameInput">First Name</label>
+              <input id="userFirstNameInput" type="text" placeholder="First Name" />
+            </div>
+
+            <div class="fieldGroup">
+              <label for="userLastNameInput">Last Name</label>
+              <input id="userLastNameInput" type="text" placeholder="Last Name" />
+            </div>
+
+            <div class="fieldGroup">
+              <label for="userUsernameInput">Username</label>
+              <input id="userUsernameInput" type="text" placeholder="Username" />
+            </div>
+
+            <div class="fieldGroup">
+              <label for="userPasswordInput">Password</label>
+              <input id="userPasswordInput" type="password" placeholder="Password" />
+            </div>
+
+            <div class="fieldGroup">
+              <label for="userRoleSelect">Role</label>
+              <select id="userRoleSelect">
+                <option value="user">User</option>
+                <option value="manager">Manager</option>
+                <option value="admin">Admin</option>
+              </select>
+            </div>
+
+            <div class="fieldGroup">
+              <label for="userActiveSelect">Status</label>
+              <select id="userActiveSelect">
+                <option value="true">Active</option>
+                <option value="false">Inactive</option>
+              </select>
+            </div>
+          </div>
+
+          <div class="usersMetaRow">
+            <div class="usersMetaCard">
+              <span class="usersMetaLabel">Selected User ID</span>
+              <span id="selectedUserIdText" class="usersMetaValue">New User</span>
+            </div>
+
+            <div class="usersMetaCard">
+              <span class="usersMetaLabel">Permission Preset</span>
+              <span id="permissionPresetText" class="usersMetaValue">Role-based</span>
+            </div>
+          </div>
+        </section>
+
+        <section class="usersPermissionsCard">
+          <div class="usersSectionHeader">
+            <div>
+              <h2>Permissions</h2>
+              <p class="usersSubtext">
+                Assign module access and administrative capabilities.
+              </p>
+            </div>
+          </div>
+
+          <div class="permissionsGrid">
+            <div class="permissionGroup">
+              <h3>General</h3>
+
+              <label class="permissionOption" for="permDashboardView">
+                <input id="permDashboardView" type="checkbox" />
+                <span>Dashboard</span>
+              </label>
+
+              <label class="permissionOption" for="permSettingsAccess">
+                <input id="permSettingsAccess" type="checkbox" />
+                <span>Settings</span>
+              </label>
+
+              <label class="permissionOption" for="permUserManagement">
+                <input id="permUserManagement" type="checkbox" />
+                <span>User Management</span>
+              </label>
+            </div>
+
+            <div class="permissionGroup">
+              <h3>Equipment</h3>
+
+              <label class="permissionOption" for="permEquipmentView">
+                <input id="permEquipmentView" type="checkbox" />
+                <span>View Equipment</span>
+              </label>
+
+              <label class="permissionOption" for="permEquipmentEdit">
+                <input id="permEquipmentEdit" type="checkbox" />
+                <span>Add / Edit Equipment</span>
+              </label>
+
+              <label class="permissionOption" for="permEquipmentDelete">
+                <input id="permEquipmentDelete" type="checkbox" />
+                <span>Delete Equipment</span>
+              </label>
+
+              <label class="permissionOption" for="permDeletedEquipmentAccess">
+                <input id="permDeletedEquipmentAccess" type="checkbox" />
+                <span>Deleted Equipment</span>
+              </label>
+            </div>
+
+            <div class="permissionGroup">
+              <h3>Work Orders</h3>
+
+              <label class="permissionOption" for="permWorkOrdersView">
+                <input id="permWorkOrdersView" type="checkbox" />
+                <span>View Work Orders</span>
+              </label>
+
+              <label class="permissionOption" for="permWorkOrdersEdit">
+                <input id="permWorkOrdersEdit" type="checkbox" />
+                <span>Add / Edit Work Orders</span>
+              </label>
+
+              <label class="permissionOption" for="permWorkOrdersDelete">
+                <input id="permWorkOrdersDelete" type="checkbox" />
+                <span>Delete Work Orders</span>
+              </label>
+            </div>
+
+            <div class="permissionGroup">
+              <h3>Inventory & Purchasing</h3>
+
+              <label class="permissionOption" for="permInventoryView">
+                <input id="permInventoryView" type="checkbox" />
+                <span>View Inventory</span>
+              </label>
+
+              <label class="permissionOption" for="permInventoryEdit">
+                <input id="permInventoryEdit" type="checkbox" />
+                <span>Add / Edit Inventory</span>
+              </label>
+
+              <label class="permissionOption" for="permInventoryDelete">
+                <input id="permInventoryDelete" type="checkbox" />
+                <span>Delete Inventory</span>
+              </label>
+
+              <label class="permissionOption" for="permVendorsAccess">
+                <input id="permVendorsAccess" type="checkbox" />
+                <span>Vendors</span>
+              </label>
+
+              <label class="permissionOption" for="permPurchaseOrdersAccess">
+                <input id="permPurchaseOrdersAccess" type="checkbox" />
+                <span>Purchase Orders</span>
+              </label>
+            </div>
+
+            <div class="permissionGroup permissionGroupWide">
+              <h3>Role Presets</h3>
+
+              <div class="permissionPresetButtons">
+                <button id="applyUserPresetBtn" type="button">Apply User Preset</button>
+                <button id="applyManagerPresetBtn" type="button">Apply Manager Preset</button>
+                <button id="applyAdminPresetBtn" type="button" class="primaryBtn">Apply Admin Preset</button>
+              </div>
+
+              <p class="usersSubtext permissionHelpText">
+                Presets can be adjusted after applying them.
+              </p>
+            </div>
+          </div>
+        </section>
+
+        <section class="usersActionsCard">
+          <div class="usersSectionHeader">
+            <div>
+              <h2>Actions</h2>
+              <p class="usersSubtext">
+                Save changes, reset passwords, and manage account state.
+              </p>
+            </div>
+          </div>
+
+          <div class="usersActionsRow">
+            <button id="saveUserDetailsBtn" type="button" class="primaryBtn">Save User</button>
+            <button id="resetUserPasswordBtn" type="button">Reset Password</button>
+            <button id="deactivateUserBtn" type="button">Deactivate</button>
+            <button id="deleteUserWindowBtn" type="button" class="danger">Delete User</button>
+            <button id="clearUserEditorBtn" type="button">Clear</button>
+          </div>
+
+          <div id="usersWindowMessage" class="usersWindowMessage" aria-live="polite"></div>
+        </section>
+      </main>
+    </div>
+  </div>
+
+  <div id="usersAppModal" class="appModal">
+    <div class="appModalCard">
+      <div class="appModalHeader">
+        <h3 id="usersAppModalTitle">Message</h3>
+        <button id="usersAppModalCloseBtn" type="button">✕</button>
+      </div>
+
+      <div class="appModalBody">
+        <p id="usersAppModalMessage"></p>
+      </div>
+
+      <div class="formButtons">
+        <button id="usersAppModalConfirmBtn" type="button">OK</button>
+        <button id="usersAppModalCancelBtn" type="button">Cancel</button>
+      </div>
+    </div>
+  </div>
+
+  <script type="module" src="./users.js"></script>
+</body>
+</html>

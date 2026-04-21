@@ -1,387 +1,179 @@
-import { getDom } from "./dom.js";
-import {
-  normalizeCellValue
-} from "./utils.js";
-import {
-  loadPurchaseOrders,
-  savePurchaseOrders
-} from "./storage.js";
-import {
-  getFilteredGridData,
-  buildColumnFiltersGeneric,
-  renderGridHeaderGeneric,
-  toggleRowSelection,
-  clearSelections,
-  updateSelectionButtonText,
-  setGridResultCount,
-  isRowSelected
-} from "./gridShared.js";
+import { getLoggedInUser, loadPurchaseOrders } from "./storage.js";
 
-const PO_STORAGE_KEYS = {
-  columns: "fleetPOColumns",
-  gridState: "fleetPOGridState"
-};
+function byId(id) {
+  return document.getElementById(id);
+}
 
-function safeParse(value, fallback) {
+function getPurchaseOrderPermissions() {
+  const user = getLoggedInUser();
+  const permissions =
+    user &&
+    typeof user === "object" &&
+    user.permissions &&
+    typeof user.permissions === "object"
+      ? user.permissions
+      : {};
+
+  return {
+    purchaseOrdersAccess: !!permissions.purchaseOrdersAccess
+  };
+}
+
+function openPurchaseOrderWindow(id = "") {
+  const fileName = "purchaseorder.html";
+  const url = id
+    ? `${fileName}?id=${encodeURIComponent(id)}`
+    : fileName;
+
+  const features = [
+    "width=1400",
+    "height=900",
+    "resizable=yes",
+    "scrollbars=yes"
+  ].join(",");
+
+  const popup = window.open(url, "_blank", features);
+
+  if (!popup) {
+    console.error("Unable to open purchase order window.");
+  }
+}
+
+async function renderPurchaseOrdersNavTable() {
+  const table = byId("poTable");
+  const tableBody = table?.querySelector("tbody");
+  const headerRow = byId("poTableHeaderRow");
+  const resultCount = byId("poResultCount");
+  const searchInput = byId("poGlobalSearch");
+
+  if (!tableBody || !headerRow) return;
+
+  const searchText = String(searchInput?.value || "").trim().toLowerCase();
+
+  headerRow.innerHTML = `
+    <th>PO #</th>
+    <th>Vendor</th>
+    <th>Status</th>
+    <th>Date</th>
+    <th>Requested By</th>
+    <th>Total</th>
+  `;
+
   try {
-    if (value == null || value === "") return fallback;
-    const parsed = JSON.parse(value);
-    return parsed ?? fallback;
-  } catch {
-    return fallback;
+    const purchaseOrders = await loadPurchaseOrders();
+    const rows = Array.isArray(purchaseOrders) ? purchaseOrders : [];
+
+    const filtered = rows.filter(item => {
+      if (!searchText) return true;
+
+      return [
+        item.poNumber,
+        item.vendor,
+        item.status,
+        item.date,
+        item.requestedBy,
+        item.shipTo,
+        item.notes
+      ]
+        .map(value => String(value ?? "").toLowerCase())
+        .some(value => value.includes(searchText));
+    });
+
+    if (!filtered.length) {
+      tableBody.innerHTML = `
+        <tr>
+          <td colspan="6" class="emptyCell">No purchase orders found</td>
+        </tr>
+      `;
+      if (resultCount) resultCount.textContent = "0 records";
+      return;
+    }
+
+    tableBody.innerHTML = filtered
+      .map(item => {
+        const id = String(item.id ?? "");
+        const poNumber = item.poNumber || "";
+        const vendor = item.vendor || "";
+        const status = item.status || "";
+        const date = item.date || "";
+        const requestedBy = item.requestedBy || "";
+        const total = Number(item.total || 0).toFixed(2);
+
+        return `
+          <tr data-purchase-order-id="${id}" class="purchaseOrderNavRow">
+            <td>${poNumber}</td>
+            <td>${vendor}</td>
+            <td>${status}</td>
+            <td>${date}</td>
+            <td>${requestedBy}</td>
+            <td>$${total}</td>
+          </tr>
+        `;
+      })
+      .join("");
+
+    if (resultCount) {
+      resultCount.textContent = `${filtered.length} record${filtered.length === 1 ? "" : "s"}`;
+    }
+
+    tableBody.querySelectorAll("tr[data-purchase-order-id]").forEach(row => {
+      row.addEventListener("dblclick", () => {
+        const id = row.dataset.purchaseOrderId || "";
+        if (id) {
+          openPurchaseOrderWindow(id);
+        }
+      });
+    });
+  } catch (error) {
+    console.error("Failed to render purchase orders table:", error);
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="6" class="emptyCell">Unable to load purchase orders</td>
+      </tr>
+    `;
+    if (resultCount) resultCount.textContent = "0 records";
   }
 }
 
-function loadPOColumnsLocal(defaultColumns = []) {
-  const saved = safeParse(localStorage.getItem(PO_STORAGE_KEYS.columns), defaultColumns);
-  return Array.isArray(saved) ? saved : defaultColumns;
-}
+function applyPurchaseOrderPermissionUi() {
+  const permissions = getPurchaseOrderPermissions();
 
-function loadPOGridStateLocal(defaultState = {}) {
-  const saved = safeParse(localStorage.getItem(PO_STORAGE_KEYS.gridState), defaultState);
-  return saved && typeof saved === "object" && !Array.isArray(saved)
-    ? saved
-    : defaultState;
-}
+  const openBtn = byId("openPOFormBtn");
+  const deleteBtn = byId("deleteSelectedPOBtn");
 
-function savePOGridSettingsLocal(columns, state) {
-  localStorage.setItem(
-    PO_STORAGE_KEYS.columns,
-    JSON.stringify(Array.isArray(columns) ? columns : [])
-  );
-
-  localStorage.setItem(
-    PO_STORAGE_KEYS.gridState,
-    JSON.stringify(
-      state && typeof state === "object" && !Array.isArray(state) ? state : {}
-    )
-  );
-}
-
-export async function initPurchaseOrdersNav() {
-  const dom = getDom() || {};
-
-  let purchaseOrders = [];
-  let selectedPurchaseOrderIds = new Set();
-  let purchaseOrdersSelectionMode = false;
-  let poFilterUiMode = "header";
-
-  const DEFAULT_PO_COLUMNS = [
-    { key: "poNumber", label: "PO #", visible: true, sortable: true, filterType: "text", custom: false },
-    { key: "vendor", label: "Vendor", visible: true, sortable: true, filterType: "text", custom: false },
-    { key: "status", label: "Status", visible: true, sortable: true, filterType: "select", custom: false },
-    { key: "date", label: "Date", visible: true, sortable: true, filterType: "text", custom: false },
-    { key: "shipTo", label: "Ship To", visible: false, sortable: true, filterType: "text", custom: false },
-    { key: "requestedBy", label: "Requested By", visible: false, sortable: true, filterType: "text", custom: false },
-    { key: "subtotal", label: "Subtotal", visible: false, sortable: true, filterType: "text", custom: false },
-    { key: "taxAmount", label: "Tax", visible: false, sortable: true, filterType: "text", custom: false },
-    { key: "shippingAmount", label: "Shipping", visible: false, sortable: true, filterType: "text", custom: false },
-    { key: "total", label: "Total", visible: true, sortable: true, filterType: "text", custom: false }
-  ];
-
-  let poColumns = loadPOColumnsLocal(DEFAULT_PO_COLUMNS);
-  if (!Array.isArray(poColumns) || !poColumns.length || !poColumns.some(col => col.visible)) {
-    poColumns = DEFAULT_PO_COLUMNS.map(col => ({ ...col }));
+  if (openBtn) {
+    openBtn.style.display = permissions.purchaseOrdersAccess ? "" : "none";
+    openBtn.disabled = !permissions.purchaseOrdersAccess;
   }
 
-  let poGridState = loadPOGridStateLocal({
-    sortKey: "date",
-    sortDirection: "desc",
-    globalSearch: "",
-    filters: {},
-    headerMenuOpenFor: null
+  if (deleteBtn) {
+    deleteBtn.style.display = permissions.purchaseOrdersAccess ? "" : "none";
+    deleteBtn.disabled = !permissions.purchaseOrdersAccess;
+  }
+}
+
+export function initPurchaseOrdersNav() {
+  const openBtn = byId("openPOFormBtn");
+  const searchInput = byId("poGlobalSearch");
+
+  openBtn?.addEventListener("click", () => {
+    openPurchaseOrderWindow();
   });
 
-  async function hydratePurchaseOrders() {
-    try {
-      const loaded = await loadPurchaseOrders();
-      purchaseOrders = Array.isArray(loaded) ? loaded : [];
-    } catch (error) {
-      console.error("Failed to load purchase orders:", error);
-      purchaseOrders = [];
-    }
-  }
-
-  async function persistPurchaseOrders() {
-    await savePurchaseOrders(purchaseOrders);
-  }
-
-  function persistGrid() {
-    savePOGridSettingsLocal(poColumns, poGridState);
-  }
-
-  function normalizePurchaseOrderRecord(po = {}) {
-    return {
-      ...po,
-      id: po.id ?? "",
-      poNumber: po.poNumber || "",
-      vendor: po.vendor || "",
-      status: po.status || "",
-      date: po.date || "",
-      shipTo: po.shipTo || "",
-      requestedBy: po.requestedBy || "",
-      subtotal: Number(po.subtotal || 0),
-      taxAmount: Number(po.taxAmount || 0),
-      shippingAmount: Number(po.shippingAmount || 0),
-      total: Number(po.total || 0)
-    };
-  }
-
-  function getNormalizedPurchaseOrders() {
-    return purchaseOrders.map(normalizePurchaseOrderRecord);
-  }
-
-  function getFilteredNormalizedPurchaseOrders() {
-    return getFilteredGridData(getNormalizedPurchaseOrders(), poColumns, poGridState);
-  }
-
-  function refreshPurchaseOrdersSelectionUi() {
-    updateSelectionButtonText({
-      selectionMode: purchaseOrdersSelectionMode,
-      selectedSet: selectedPurchaseOrderIds,
-      actionButton: dom.deleteSelectedPOBtn,
-      defaultText: "Delete Selected",
-      confirmText: "Confirm Delete",
-      cancelButton: dom.cancelPOSelectionBtn,
-      table: dom.poTable
-    });
-  }
-
-  function enterPurchaseOrdersSelectionMode() {
-    purchaseOrdersSelectionMode = true;
-    refreshPurchaseOrdersSelectionUi();
+  searchInput?.addEventListener("input", () => {
     renderPurchaseOrdersNavTable();
-  }
+  });
 
-  function exitPurchaseOrdersSelectionMode(clear = true) {
-    purchaseOrdersSelectionMode = false;
-    if (clear) {
-      clearSelections(selectedPurchaseOrderIds);
-    }
-    refreshPurchaseOrdersSelectionUi();
+  window.addEventListener("fleet:purchase-orders-changed", () => {
     renderPurchaseOrdersNavTable();
-  }
+  });
 
-  function openPurchaseOrderFormWindow(purchaseOrderId = null) {
-    const url = purchaseOrderId != null
-      ? `purchaseorder.html?id=${purchaseOrderId}`
-      : "purchaseorder.html";
-
-    window.open(
-      url,
-      "PurchaseOrderWindow",
-      "width=1200,height=900"
-    );
-  }
-
-  async function deleteSelectedPurchaseOrders() {
-    if (!purchaseOrdersSelectionMode) {
-      enterPurchaseOrdersSelectionMode();
-      return;
-    }
-
-    if (selectedPurchaseOrderIds.size === 0) {
-      alert("Select purchase orders to delete.");
-      return;
-    }
-
-    const confirmed = confirm(
-      `Delete ${selectedPurchaseOrderIds.size} selected purchase order(s)?`
-    );
-    if (!confirmed) return;
-
-    purchaseOrders = purchaseOrders.filter(
-      po => !selectedPurchaseOrderIds.has(String(po.id))
-    );
-
-    await persistPurchaseOrders();
-    exitPurchaseOrdersSelectionMode(true);
-  }
-
-  function clearPOFilters() {
-    poGridState.globalSearch = "";
-    poGridState.filters = {};
-    poGridState.headerMenuOpenFor = null;
-
-    if (dom.poGlobalSearch) {
-      dom.poGlobalSearch.value = "";
-    }
-
-    clearSelections(selectedPurchaseOrderIds);
-    persistGrid();
-    renderPurchaseOrdersNavTable();
-  }
-
-  function ensureValidColumns() {
-    if (!Array.isArray(poColumns) || !poColumns.length || !poColumns.some(col => col.visible)) {
-      poColumns = DEFAULT_PO_COLUMNS.map(col => ({ ...col }));
-      persistGrid();
-    }
-  }
-
-  function renderEmptyRow(message) {
-    const row = document.createElement("tr");
-    const td = document.createElement("td");
-    td.className = "emptyCell";
-    td.colSpan = poColumns.filter(col => col.visible).length + 1;
-    td.textContent = message;
-    row.appendChild(td);
-    dom.poTableBody.appendChild(row);
-  }
-
-  function renderPurchaseOrdersNavTable() {
-    if (!dom.poTable || !dom.poTableHeaderRow || !dom.poTableBody) {
-      console.warn("Purchase Orders grid DOM missing", {
-        table: !!dom.poTable,
-        headerRow: !!dom.poTableHeaderRow,
-        body: !!dom.poTableBody
-      });
-      return;
-    }
-
-    ensureValidColumns();
-
-    const normalizedData = getNormalizedPurchaseOrders();
-    const normalizedRows = getFilteredGridData(normalizedData, poColumns, poGridState);
-
-    renderGridHeaderGeneric({
-      table: dom.poTable,
-      headerRow: dom.poTableHeaderRow,
-      columnFiltersHost: dom.poColumnFilters,
-      columns: poColumns,
-      gridState: poGridState,
-      filterUiMode: poFilterUiMode,
-      selectionMode: purchaseOrdersSelectionMode,
-      selectAllCheckboxId: "selectAllPurchaseOrdersCheckbox",
-      visibleRows: normalizedRows,
-      selectedSet: selectedPurchaseOrderIds,
-      resultCountEl: dom.poResultCount,
-      persistGrid,
-      renderFn: renderPurchaseOrdersNavTable,
-      buildColumnFiltersFn: buildColumnFiltersGeneric
-    });
-
-    dom.poTableBody.innerHTML = "";
-
-    if (!normalizedRows.length) {
-      renderEmptyRow("No purchase orders found");
-      setGridResultCount(dom.poResultCount, normalizedRows);
-      refreshPurchaseOrdersSelectionUi();
-      return;
-    }
-
-    normalizedRows.forEach(po => {
-      const row = document.createElement("tr");
-      row.dataset.purchaseOrderId = po.id;
-
-      if (purchaseOrdersSelectionMode) {
-        const selectTd = document.createElement("td");
-        selectTd.className = "selectColumnCell";
-
-        const checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.className = "gridRowCheckbox";
-        checkbox.checked = isRowSelected(selectedPurchaseOrderIds, po.id);
-
-        checkbox.addEventListener("click", event => event.stopPropagation());
-        checkbox.addEventListener("change", () => {
-          toggleRowSelection(selectedPurchaseOrderIds, po.id);
-          refreshPurchaseOrdersSelectionUi();
-        });
-
-        selectTd.appendChild(checkbox);
-        row.appendChild(selectTd);
-      }
-
-      poColumns
-        .filter(col => col.visible)
-        .forEach(col => {
-          const td = document.createElement("td");
-
-          if (["subtotal", "taxAmount", "shippingAmount", "total"].includes(col.key)) {
-            td.textContent = `$${Number(po[col.key] || 0).toFixed(2)}`;
-          } else {
-            td.textContent = normalizeCellValue(po[col.key]);
-          }
-
-          row.appendChild(td);
-        });
-
-      row.addEventListener("click", () => {
-        if (purchaseOrdersSelectionMode) {
-          toggleRowSelection(selectedPurchaseOrderIds, po.id);
-          renderPurchaseOrdersNavTable();
-        } else {
-          openPurchaseOrderFormWindow(po.id);
-        }
-      });
-
-      if (isRowSelected(selectedPurchaseOrderIds, po.id)) {
-        row.classList.add("selectedRow");
-      }
-
-      dom.poTableBody.appendChild(row);
-    });
-
-    setGridResultCount(dom.poResultCount, normalizedRows);
-    refreshPurchaseOrdersSelectionUi();
-  }
-
-  function bindEvents() {
-    if (dom.openPOFormBtn) {
-      dom.openPOFormBtn.addEventListener("click", () => {
-        openPurchaseOrderFormWindow();
-      });
-    }
-
-    if (dom.deleteSelectedPOBtn) {
-      dom.deleteSelectedPOBtn.addEventListener("click", deleteSelectedPurchaseOrders);
-    }
-
-    if (dom.cancelPOSelectionBtn) {
-      dom.cancelPOSelectionBtn.addEventListener("click", () => {
-        exitPurchaseOrdersSelectionMode(true);
-      });
-    }
-
-    if (dom.poGlobalSearch) {
-      dom.poGlobalSearch.value = poGridState.globalSearch || "";
-      dom.poGlobalSearch.addEventListener("input", () => {
-        poGridState.globalSearch = dom.poGlobalSearch.value || "";
-        persistGrid();
-        renderPurchaseOrdersNavTable();
-      });
-    }
-
-    if (dom.clearPOFiltersBtn) {
-      dom.clearPOFiltersBtn.addEventListener("click", clearPOFilters);
-    }
-
-    if (dom.poOptionsBtn && dom.poOptionsDropdown) {
-      dom.poOptionsBtn.addEventListener("click", event => {
-        event.stopPropagation();
-        dom.poOptionsDropdown.classList.toggle("show");
-      });
-
-      document.addEventListener("click", event => {
-        if (
-          dom.poOptionsDropdown &&
-          dom.poOptionsBtn &&
-          !dom.poOptionsDropdown.contains(event.target) &&
-          !dom.poOptionsBtn.contains(event.target)
-        ) {
-          dom.poOptionsDropdown.classList.remove("show");
-        }
-      });
-    }
-  }
-
-  bindEvents();
-  await hydratePurchaseOrders();
+  applyPurchaseOrderPermissionUi();
   renderPurchaseOrdersNavTable();
 
   return {
-    renderPurchaseOrdersNavTable,
-    openPurchaseOrderFormWindow
+    openPurchaseOrderWindow,
+    applyPurchaseOrderPermissionUi,
+    renderPurchaseOrdersNavTable
   };
 }

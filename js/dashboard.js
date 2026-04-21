@@ -1,47 +1,100 @@
 import { getDom } from "./dom.js";
-import { normalizeText } from "./utils.js";
+import { normalizeText, formatMoney, escapeHtml } from "./utils.js";
 import {
   loadEquipment,
   loadWorkOrders,
-  loadInventory,
-  loadVendors,
   loadPurchaseOrders,
-  loadSettings
+  loadSettings,
+  loadUsers,
+  getLoggedInUsername,
+  getLoggedInUser
 } from "./storage.js";
+import {
+  buildDashboardDueServicesData,
+  parseDate,
+  dateToYMD
+} from "./service-tracking.js";
 
 export async function initDashboard() {
   const dom = getDom();
 
+  const DASHBOARD_LAYOUT_KEY = "fleetDashboardLayout";
+  const DASHBOARD_WIDGETS_KEY = "fleetDashboardWidgets";
+
+  const DEFAULT_WIDGET_ORDER = [
+    "equipmentServices",
+    "weatherSummary",
+    "recentActivity",
+    "vehicleStatus",
+    "activeWorkOrders",
+    "openIssues",
+    "serviceCosts",
+    "totalCosts"
+  ];
+
+  const DEFAULT_WIDGET_SPANS = {
+    equipmentServices: 12,
+    weatherSummary: 4,
+    recentActivity: 6,
+    vehicleStatus: 6,
+    activeWorkOrders: 4,
+    openIssues: 4,
+    serviceCosts: 4,
+    totalCosts: 4
+  };
+
+  const DEFAULT_VISIBLE_WIDGETS = {
+    equipmentServices: true,
+    weatherSummary: true,
+    recentActivity: true,
+    vehicleStatus: true,
+    activeWorkOrders: true,
+    openIssues: true,
+    serviceCosts: true,
+    totalCosts: true
+  };
+
+  const WIDGET_LABELS = {
+    equipmentServices: "Equipment Services",
+    weatherSummary: "Weather",
+    recentActivity: "Recent Comments / Activity",
+    vehicleStatus: "Vehicle Status",
+    activeWorkOrders: "Active Work Orders",
+    openIssues: "Open Issues",
+    serviceCosts: "Service Costs",
+    totalCosts: "Total Costs"
+  };
+
+  let draggedWidgetId = null;
+
   let dashboardCache = {
     equipmentList: [],
     workOrders: [],
-    inventory: [],
-    vendors: [],
     purchaseOrders: [],
     settings: {
       companyName: "",
       defaultLocation: "",
       theme: "default",
+      weatherZip: "62201",
       serviceTasks: [],
       serviceTemplates: []
     }
   };
 
-  function createEmptyMessage(text) {
-    const div = document.createElement("div");
-    div.className = "muted";
-    div.textContent = text;
-    return div;
-  }
+  let dueServicesActiveTab = "due";
+  let dueServicesActiveCategory = "Trucks";
+
+  let dueServicesEventsBound = false;
+  let layoutEventsBound = false;
+  let syncEventsBound = false;
+  let editorEventsBound = false;
 
   function safeArray(value) {
     return Array.isArray(value) ? value : [];
   }
 
   function safeObject(value) {
-    return value && typeof value === "object" && !Array.isArray(value)
-      ? value
-      : {};
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
   }
 
   function normalizeLower(value) {
@@ -53,6 +106,48 @@ export async function initDashboard() {
     return Number.isFinite(num) ? num : 0;
   }
 
+  function createEmptyMessage(text) {
+    const div = document.createElement("div");
+    div.className = "muted";
+    div.textContent = text;
+    return div;
+  }
+
+  function getCurrentPermissions() {
+    const loggedInUser = getLoggedInUser();
+    const permissions =
+      loggedInUser &&
+      typeof loggedInUser === "object" &&
+      loggedInUser.permissions &&
+      typeof loggedInUser.permissions === "object"
+        ? loggedInUser.permissions
+        : {};
+
+    return {
+      dashboardView: true,
+      equipmentView: true,
+      workOrdersView: true,
+      purchaseOrdersAccess: true,
+      ...permissions
+    };
+  }
+
+  function canViewDashboard() {
+    return !!getCurrentPermissions().dashboardView;
+  }
+
+  function canViewEquipment() {
+    return !!getCurrentPermissions().equipmentView;
+  }
+
+  function canViewWorkOrders() {
+    return !!getCurrentPermissions().workOrdersView;
+  }
+
+  function canViewPurchaseOrders() {
+    return !!getCurrentPermissions().purchaseOrdersAccess;
+  }
+
   function getTodayDateString() {
     const now = new Date();
     const year = now.getFullYear();
@@ -61,128 +156,477 @@ export async function initDashboard() {
     return `${year}-${month}-${day}`;
   }
 
-  function parseDate(value) {
-    if (!value) return null;
+  function getGreetingByTime() {
+    const hour = new Date().getHours();
 
-    if (value instanceof Date && !Number.isNaN(value.getTime())) {
-      return new Date(value.getTime());
+    if (hour < 12) return "Good Morning";
+    if (hour < 18) return "Good Afternoon";
+    return "Good Evening";
+  }
+
+  function getDashboardWidgets() {
+    const grid = dom.dashboardGrid || document.getElementById("dashboardGrid");
+    if (!grid) return [];
+
+    return Array.from(grid.querySelectorAll("[data-widget-id]"));
+  }
+
+  function getWidgetById(widgetId) {
+    return getDashboardWidgets().find(
+      widget => String(widget.dataset.widgetId || "") === String(widgetId || "")
+    );
+  }
+
+  function getDueServicesTargets() {
+    const section =
+      dom.dashDueServicesSection ||
+      document.getElementById("dashDueServicesSection") ||
+      document.getElementById("equipmentServicesSection") ||
+      document.getElementById("equipmentServicesCard") ||
+      null;
+
+    const tabs =
+      dom.dashDueServicesTabs ||
+      document.getElementById("dashDueServicesTabs") ||
+      section?.querySelector("#dashDueServicesTabs") ||
+      null;
+
+    const categories =
+      dom.dashDueServicesCategories ||
+      document.getElementById("dashDueServicesCategories") ||
+      section?.querySelector("#dashDueServicesCategories") ||
+      null;
+
+    const list =
+      dom.dashDueServicesList ||
+      dom.equipmentServicesList ||
+      document.getElementById("dashDueServicesList") ||
+      document.getElementById("equipmentServicesList") ||
+      section?.querySelector("#dashDueServicesList") ||
+      null;
+
+    return { section, tabs, categories, list };
+  }
+
+  function getWeatherTargets() {
+    const section =
+      dom.dashWeatherSection ||
+      document.getElementById("dashWeatherSection") ||
+      null;
+
+    const summary =
+      dom.dashWeatherSummary ||
+      document.getElementById("dashWeatherSummary") ||
+      section?.querySelector("#dashWeatherSummary") ||
+      null;
+
+    return { section, summary };
+  }
+
+  function loadDashboardLayout() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(DASHBOARD_LAYOUT_KEY) || "{}");
+      return parsed && typeof parsed === "object" ? parsed : {};
+    } catch (error) {
+      console.error("Unable to load dashboard layout:", error);
+      return {};
+    }
+  }
+
+  function loadDashboardWidgetVisibility() {
+    try {
+      const parsed = JSON.parse(localStorage.getItem(DASHBOARD_WIDGETS_KEY) || "{}");
+      return {
+        ...DEFAULT_VISIBLE_WIDGETS,
+        ...safeObject(parsed)
+      };
+    } catch (error) {
+      console.error("Unable to load dashboard widget visibility:", error);
+      return { ...DEFAULT_VISIBLE_WIDGETS };
+    }
+  }
+
+  function saveDashboardWidgetVisibility(visibility) {
+    localStorage.setItem(
+      DASHBOARD_WIDGETS_KEY,
+      JSON.stringify({
+        ...DEFAULT_VISIBLE_WIDGETS,
+        ...safeObject(visibility)
+      })
+    );
+  }
+
+  function persistCurrentDashboardLayout() {
+    const grid = dom.dashboardGrid || document.getElementById("dashboardGrid");
+    if (!grid) return;
+
+    const widgets = getDashboardWidgets();
+    const order = widgets.map(widget => String(widget.dataset.widgetId || "")).filter(Boolean);
+    const spans = {};
+
+    widgets.forEach(widget => {
+      const widgetId = String(widget.dataset.widgetId || "");
+      const span = Number(widget.dataset.span || widget.dataset.widgetSpan || 4) || 4;
+      if (widgetId) spans[widgetId] = span;
+    });
+
+    localStorage.setItem(
+      DASHBOARD_LAYOUT_KEY,
+      JSON.stringify({
+        order,
+        spans
+      })
+    );
+  }
+
+  function getSafeSpan(span) {
+    const numeric = Number(span) || 4;
+    if (numeric <= 4) return 4;
+    if (numeric <= 6) return 6;
+    return 12;
+  }
+
+  function applyWidgetSpan(widget, span) {
+    if (!widget) return;
+
+    const safeSpan = getSafeSpan(span);
+    widget.dataset.span = String(safeSpan);
+    widget.dataset.widgetSpan = String(safeSpan);
+
+    widget.classList.remove(
+      "widgetSpan1",
+      "widgetSpan2",
+      "widgetSpan4",
+      "widgetSpan6",
+      "widgetSpan12"
+    );
+    widget.classList.add(`widgetSpan${safeSpan}`);
+
+    widget.style.gridColumn = `span ${safeSpan}`;
+  }
+
+  function applyWidgetVisibility() {
+    const visibility = loadDashboardWidgetVisibility();
+
+    getDashboardWidgets().forEach(widget => {
+      const widgetId = String(widget.dataset.widgetId || "");
+      const isVisible = visibility[widgetId] !== false;
+      widget.hidden = !isVisible;
+      widget.style.display = isVisible ? "" : "none";
+    });
+  }
+
+  function applyDashboardLayout() {
+    const grid = dom.dashboardGrid || document.getElementById("dashboardGrid");
+    if (!grid) return;
+
+    const layout = loadDashboardLayout();
+    const order = safeArray(layout.order);
+    const spans = safeObject(layout.spans);
+
+    const widgetMap = new Map();
+    getDashboardWidgets().forEach(widget => {
+      const widgetId = String(widget.dataset.widgetId || "");
+      if (widgetId) widgetMap.set(widgetId, widget);
+    });
+
+    const orderedIds = [
+      ...order.filter(id => widgetMap.has(id)),
+      ...DEFAULT_WIDGET_ORDER.filter(id => widgetMap.has(id) && !order.includes(id)),
+      ...Array.from(widgetMap.keys()).filter(
+        id => !order.includes(id) && !DEFAULT_WIDGET_ORDER.includes(id)
+      )
+    ];
+
+    orderedIds.forEach(widgetId => {
+      const widget = widgetMap.get(widgetId);
+      if (!widget) return;
+
+      grid.appendChild(widget);
+      applyWidgetSpan(widget, spans[widgetId] ?? DEFAULT_WIDGET_SPANS[widgetId] ?? 4);
+    });
+
+    applyWidgetVisibility();
+  }
+
+  function resetDashboardLayout() {
+    localStorage.removeItem(DASHBOARD_LAYOUT_KEY);
+    localStorage.removeItem(DASHBOARD_WIDGETS_KEY);
+
+    getDashboardWidgets().forEach(widget => {
+      const widgetId = String(widget.dataset.widgetId || "");
+      applyWidgetSpan(widget, DEFAULT_WIDGET_SPANS[widgetId] ?? 4);
+      widget.hidden = false;
+      widget.style.display = "";
+    });
+
+    applyDashboardLayout();
+    renderDashboardEditorList();
+  }
+
+  function moveWidgetBefore(sourceId, targetId) {
+    const grid = dom.dashboardGrid || document.getElementById("dashboardGrid");
+    if (!grid) return;
+
+    const sourceWidget = getWidgetById(sourceId);
+    const targetWidget = getWidgetById(targetId);
+
+    if (!sourceWidget || !targetWidget || sourceWidget === targetWidget) return;
+
+    grid.insertBefore(sourceWidget, targetWidget);
+    persistCurrentDashboardLayout();
+  }
+
+  function openDashboardEditor() {
+    const modal = dom.dashboardEditorModal || document.getElementById("dashboardEditorModal");
+    if (!modal) return;
+
+    renderDashboardEditorList();
+    modal.classList.add("show");
+    modal.setAttribute("aria-hidden", "false");
+  }
+
+  function closeDashboardEditor() {
+    const modal = dom.dashboardEditorModal || document.getElementById("dashboardEditorModal");
+    if (!modal) return;
+
+    modal.classList.remove("show");
+    modal.setAttribute("aria-hidden", "true");
+  }
+
+  function renderDashboardEditorList() {
+    const list =
+      dom.dashboardWidgetEditorList ||
+      dom.dashboardWidgetList ||
+      document.getElementById("dashboardWidgetEditorList") ||
+      document.getElementById("dashboardWidgetList");
+
+    if (!list) return;
+
+    const visibility = loadDashboardWidgetVisibility();
+    const widgets = getDashboardWidgets();
+
+    const orderedWidgetIds = widgets
+      .map(widget => String(widget.dataset.widgetId || ""))
+      .filter(Boolean);
+
+    list.innerHTML = "";
+
+    orderedWidgetIds.forEach(widgetId => {
+      const row = document.createElement("label");
+      row.className = "dashboardEditorOption";
+
+      const checkbox = document.createElement("input");
+      checkbox.type = "checkbox";
+      checkbox.value = widgetId;
+      checkbox.checked = visibility[widgetId] !== false;
+
+      const textWrap = document.createElement("span");
+      textWrap.className = "dashboardEditorOptionText";
+
+      const title = document.createElement("span");
+      title.className = "dashboardEditorOptionTitle";
+      title.textContent = WIDGET_LABELS[widgetId] || widgetId;
+
+      const hint = document.createElement("span");
+      hint.className = "dashboardEditorOptionHint";
+      hint.textContent = `Widget ID: ${widgetId}`;
+
+      textWrap.appendChild(title);
+      textWrap.appendChild(hint);
+
+      row.appendChild(checkbox);
+      row.appendChild(textWrap);
+      list.appendChild(row);
+    });
+  }
+
+  function saveDashboardEditorSelection() {
+    const list =
+      dom.dashboardWidgetEditorList ||
+      dom.dashboardWidgetList ||
+      document.getElementById("dashboardWidgetEditorList") ||
+      document.getElementById("dashboardWidgetList");
+
+    if (!list) return;
+
+    const nextVisibility = { ...DEFAULT_VISIBLE_WIDGETS };
+
+    Array.from(list.querySelectorAll('input[type="checkbox"]')).forEach(input => {
+      const widgetId = String(input.value || "");
+      if (!widgetId) return;
+      nextVisibility[widgetId] = !!input.checked;
+    });
+
+    saveDashboardWidgetVisibility(nextVisibility);
+    applyWidgetVisibility();
+    closeDashboardEditor();
+  }
+
+  function bindDashboardEditorEvents() {
+    if (editorEventsBound) return;
+    editorEventsBound = true;
+
+    const openBtn = dom.editDashboardBtn || document.getElementById("editDashboardBtn");
+    const modal = dom.dashboardEditorModal || document.getElementById("dashboardEditorModal");
+    const cancelBtn =
+      dom.dashboardEditorCancelBtn ||
+      document.getElementById("dashboardEditorCancelBtn");
+    const saveBtn =
+      dom.dashboardEditorSaveBtn ||
+      dom.saveDashboardEditorBtn ||
+      document.getElementById("dashboardEditorSaveBtn") ||
+      document.getElementById("saveDashboardEditorBtn");
+    const closeBtn =
+      dom.dashboardEditorCloseBtn ||
+      dom.closeDashboardEditorBtn ||
+      document.getElementById("dashboardEditorCloseBtn") ||
+      document.getElementById("closeDashboardEditorBtn");
+    const resetBtn =
+      dom.dashboardEditorResetBtn ||
+      dom.resetDashboardLayoutBtn ||
+      document.getElementById("dashboardEditorResetBtn") ||
+      document.getElementById("resetDashboardLayoutBtn");
+
+    openBtn?.addEventListener("click", () => {
+      openDashboardEditor();
+    });
+
+    cancelBtn?.addEventListener("click", () => {
+      closeDashboardEditor();
+    });
+
+    closeBtn?.addEventListener("click", () => {
+      closeDashboardEditor();
+    });
+
+    saveBtn?.addEventListener("click", () => {
+      saveDashboardEditorSelection();
+    });
+
+    resetBtn?.addEventListener("click", () => {
+      resetDashboardLayout();
+    });
+
+    modal?.addEventListener("click", event => {
+      if (event.target === modal) {
+        closeDashboardEditor();
+      }
+    });
+
+    document.addEventListener("keydown", event => {
+      if (event.key !== "Escape") return;
+      if (modal?.classList.contains("show")) {
+        closeDashboardEditor();
+      }
+    });
+  }
+
+  function bindLayoutEvents() {
+    if (layoutEventsBound) return;
+    layoutEventsBound = true;
+
+    const grid = dom.dashboardGrid || document.getElementById("dashboardGrid");
+    if (!grid) return;
+
+    getDashboardWidgets().forEach(widget => {
+      widget.setAttribute("draggable", "true");
+
+      widget.addEventListener("dragstart", event => {
+        draggedWidgetId = String(widget.dataset.widgetId || "");
+        widget.classList.add("dashboardWidgetDragging");
+
+        if (event.dataTransfer) {
+          event.dataTransfer.effectAllowed = "move";
+          event.dataTransfer.setData("text/plain", draggedWidgetId);
+        }
+      });
+
+      widget.addEventListener("dragend", () => {
+        widget.classList.remove("dashboardWidgetDragging");
+        draggedWidgetId = null;
+
+        getDashboardWidgets().forEach(item => {
+          item.classList.remove("dashboardWidgetDragOver");
+        });
+      });
+
+      widget.addEventListener("dragover", event => {
+        event.preventDefault();
+
+        const currentId = String(widget.dataset.widgetId || "");
+        if (!draggedWidgetId || !currentId || draggedWidgetId === currentId) return;
+
+        widget.classList.add("dashboardWidgetDragOver");
+      });
+
+      widget.addEventListener("dragleave", () => {
+        widget.classList.remove("dashboardWidgetDragOver");
+      });
+
+      widget.addEventListener("drop", event => {
+        event.preventDefault();
+        widget.classList.remove("dashboardWidgetDragOver");
+
+        const targetId = String(widget.dataset.widgetId || "");
+        if (!draggedWidgetId || !targetId || draggedWidgetId === targetId) return;
+
+        moveWidgetBefore(draggedWidgetId, targetId);
+      });
+    });
+
+    grid.addEventListener("click", event => {
+      const resizeBtn = event.target.closest("[data-resize-widget][data-span]");
+      if (!resizeBtn) return;
+
+      const widgetId = String(resizeBtn.dataset.resizeWidget || "");
+      const nextSpan = Number(resizeBtn.dataset.span || 4) || 4;
+      const widget = getWidgetById(widgetId);
+      if (!widget) return;
+
+      applyWidgetSpan(widget, nextSpan);
+      persistCurrentDashboardLayout();
+    });
+  }
+
+  async function renderDashboardGreeting() {
+    const greetingEl =
+      dom.dashboardGreeting ||
+      document.getElementById("dashboardGreeting") ||
+      dom.dashboardTitle ||
+      document.getElementById("dashboardTitle") ||
+      document.getElementById("dashboardPageTitle");
+
+    if (!greetingEl) return;
+
+    const currentUsername = normalizeText(getLoggedInUsername());
+
+    if (!currentUsername) {
+      greetingEl.textContent = getGreetingByTime();
+      return;
     }
 
-    const text = String(value).trim();
-    if (!text) return null;
+    try {
+      const users = safeArray(await loadUsers());
+      const currentUser = users.find(
+        user => normalizeLower(user?.username) === currentUsername.toLowerCase()
+      );
 
-    const parsed = new Date(text);
-    if (Number.isNaN(parsed.getTime())) return null;
-
-    return parsed;
-  }
-
-  function dateToYMD(date) {
-    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  }
-
-  function addDays(date, amount) {
-    const next = new Date(date.getTime());
-    next.setDate(next.getDate() + amount);
-    return next;
-  }
-
-  function addWeeks(date, amount) {
-    return addDays(date, amount * 7);
-  }
-
-  function addMonths(date, amount) {
-    const next = new Date(date.getTime());
-    next.setMonth(next.getMonth() + amount);
-    return next;
-  }
-
-  function addYears(date, amount) {
-    const next = new Date(date.getTime());
-    next.setFullYear(next.getFullYear() + amount);
-    return next;
-  }
-
-  function addIntervalToDate(date, value, unit) {
-    const amount = Math.max(0, toNumber(value));
-
-    if (!(date instanceof Date) || Number.isNaN(date.getTime()) || amount <= 0) {
-      return null;
+      const firstName = normalizeText(currentUser?.firstName);
+      greetingEl.textContent = firstName
+        ? `${getGreetingByTime()}, ${firstName}`
+        : getGreetingByTime();
+    } catch (error) {
+      console.error("Failed to render dashboard greeting:", error);
+      greetingEl.textContent = getGreetingByTime();
     }
-
-    switch (normalizeLower(unit)) {
-      case "day":
-      case "days":
-        return addDays(date, amount);
-      case "week":
-      case "weeks":
-        return addWeeks(date, amount);
-      case "month":
-      case "months":
-        return addMonths(date, amount);
-      case "year":
-      case "years":
-        return addYears(date, amount);
-      default:
-        return addDays(date, amount);
-    }
-  }
-
-  function normalizeServiceTask(task = {}) {
-    const legacyLocation = String(task.location || "").trim();
-
-    const locations = Array.isArray(task.locations)
-      ? task.locations
-          .map(value => String(value || "").trim())
-          .filter(Boolean)
-      : legacyLocation
-        ? [legacyLocation]
-        : [];
-
-    const appliesToAllLocations =
-      typeof task.appliesToAllLocations === "boolean"
-        ? task.appliesToAllLocations
-        : locations.length === 0;
-
-    return {
-      ...task,
-      id: task.id || "",
-      task: task.task || "",
-      status: task.status || "Active",
-      appliesToAllLocations,
-      locations: appliesToAllLocations ? [] : [...new Set(locations)],
-      dateTrackingMode: task.dateTrackingMode || "every",
-      dateEveryValue: task.dateEveryValue || "",
-      dateEveryUnit: task.dateEveryUnit || "Days",
-      dateOnValue: task.dateOnValue || "",
-      dateNoticeValue: task.dateNoticeValue || "7",
-      milesTrackingMode: task.milesTrackingMode || "every",
-      milesEveryValue: task.milesEveryValue || "",
-      milesAtValue: task.milesAtValue || "",
-      milesNoticeValue: task.milesNoticeValue || "0",
-      linkedTaskId: task.linkedTaskId || "",
-      parentTaskId: task.parentTaskId || ""
-    };
   }
 
   async function hydrateDashboardData() {
     try {
-      const [
-        equipmentList,
-        workOrders,
-        inventory,
-        vendors,
-        purchaseOrders,
-        settings
-      ] = await Promise.all([
+      const [equipmentList, workOrders, purchaseOrders, settings] = await Promise.all([
         loadEquipment(),
         loadWorkOrders(),
-        loadInventory(),
-        loadVendors(),
         loadPurchaseOrders(),
         loadSettings()
       ]);
@@ -190,23 +634,32 @@ export async function initDashboard() {
       dashboardCache = {
         equipmentList: safeArray(equipmentList),
         workOrders: safeArray(workOrders),
-        inventory: safeArray(inventory),
-        vendors: safeArray(vendors),
         purchaseOrders: safeArray(purchaseOrders),
-        settings: safeObject(settings)
+        settings: {
+          companyName: "",
+          defaultLocation: "",
+          theme: "default",
+          weatherZip: "62201",
+          serviceTasks: [],
+          serviceTemplates: [],
+          ...safeObject(settings),
+          weatherZip: normalizeText(settings?.weatherZip || "62201") || "62201",
+          serviceTasks: safeArray(settings?.serviceTasks),
+          serviceTemplates: safeArray(settings?.serviceTemplates)
+        }
       };
     } catch (error) {
       console.error("Failed to load dashboard data:", error);
+
       dashboardCache = {
         equipmentList: [],
         workOrders: [],
-        inventory: [],
-        vendors: [],
         purchaseOrders: [],
         settings: {
           companyName: "",
           defaultLocation: "",
           theme: "default",
+          weatherZip: "62201",
           serviceTasks: [],
           serviceTemplates: []
         }
@@ -214,511 +667,555 @@ export async function initDashboard() {
     }
   }
 
-  function getAllServiceTasks() {
-    return safeArray(dashboardCache.settings?.serviceTasks).map(normalizeServiceTask);
+  function renderVehicleStatus(equipmentList) {
+    const activeCount = safeArray(equipmentList).filter(eq => (eq.status || "") === "Active").length;
+    const inactiveCount = safeArray(equipmentList).filter(eq => (eq.status || "") === "Inactive").length;
+    const inRepairCount = safeArray(equipmentList).filter(eq => (eq.status || "") === "In Repair").length;
+    const outOfServiceCount = safeArray(equipmentList).filter(
+      eq => (eq.status || "") === "Out of Service"
+    ).length;
+
+    const dashActiveCount = dom.dashActiveCount || document.getElementById("dashActiveCount");
+    const dashInactiveCount = dom.dashInactiveCount || document.getElementById("dashInactiveCount");
+    const dashInRepairCount =
+      dom.dashInRepairCount ||
+      dom.dashInShopCount ||
+      document.getElementById("dashInRepairCount") ||
+      document.getElementById("dashInShopCount");
+    const dashOutOfServiceCount =
+      dom.dashOutOfServiceCount || document.getElementById("dashOutOfServiceCount");
+
+    if (dashActiveCount) dashActiveCount.textContent = String(activeCount);
+    if (dashInactiveCount) dashInactiveCount.textContent = String(inactiveCount);
+    if (dashInRepairCount) dashInRepairCount.textContent = String(inRepairCount);
+    if (dashOutOfServiceCount) dashOutOfServiceCount.textContent = String(outOfServiceCount);
   }
 
-  function getServiceTasksForEquipment(eq, allTasks) {
-    const equipmentLocation = normalizeLower(eq?.location || "");
+  function renderWorkOrderSummary(workOrders) {
+    const woOpen = safeArray(workOrders).filter(wo => (wo.status || "") === "Open").length;
+    const woPending = safeArray(workOrders).filter(wo =>
+      ["Pending", "In Progress", "Manager Review"].includes(wo.status || "")
+    ).length;
+    const woCompleted = safeArray(workOrders).filter(wo =>
+      ["Completed", "Closed"].includes(wo.status || "")
+    ).length;
 
-    return safeArray(allTasks)
-      .filter(task => {
-        if (normalizeLower(task.status || "active") === "inactive") {
-          return false;
-        }
+    const dashWOOpen = dom.dashWOOpen || document.getElementById("dashWOOpen");
+    const dashWOPending = dom.dashWOPending || document.getElementById("dashWOPending");
+    const dashWOCompleted = dom.dashWOCompleted || document.getElementById("dashWOCompleted");
 
-        if (task.appliesToAllLocations) {
-          return true;
-        }
-
-        const taskLocations = safeArray(task.locations);
-        if (!taskLocations.length) {
-          return true;
-        }
-
-        return taskLocations.some(location => normalizeLower(location) === equipmentLocation);
-      })
-      .sort((a, b) => {
-        const aName = normalizeLower(a.task || "");
-        const bName = normalizeLower(b.task || "");
-        return aName.localeCompare(bName);
-      });
+    if (dashWOOpen) dashWOOpen.textContent = String(woOpen);
+    if (dashWOPending) dashWOPending.textContent = String(woPending);
+    if (dashWOCompleted) dashWOCompleted.textContent = String(woCompleted);
   }
 
-  function getEquipmentCurrentMileage(eq) {
-    const candidates = [
-      eq?.currentMileage,
-      eq?.mileage,
-      eq?.odometer,
-      eq?.currentMiles,
-      eq?.miles
-    ];
+  function renderOpenIssues(workOrders) {
+    const openIssues = safeArray(workOrders).filter(wo =>
+      ["Open", "Pending", "In Progress", "Manager Review"].includes(wo.status || "")
+    ).length;
 
-    for (const candidate of candidates) {
-      const value = Number(candidate);
-      if (Number.isFinite(value) && value >= 0) {
-        return value;
-      }
-    }
+    const overdueIssues = safeArray(workOrders).filter(wo => {
+      const opened = parseDate(wo.opened || wo.date || wo.woDate);
+      const status = String(wo.status || "");
 
-    return null;
+      if (!opened) return false;
+      if (["Completed", "Closed"].includes(status)) return false;
+
+      const ageInDays = Math.floor(
+        (parseDate(getTodayDateString()) - parseDate(dateToYMD(opened))) /
+          (1000 * 60 * 60 * 24)
+      );
+
+      return ageInDays > 7;
+    }).length;
+
+    const dashOpenIssues = dom.dashOpenIssues || document.getElementById("dashOpenIssues");
+    const dashOverdueIssues =
+      dom.dashOverdueIssues || document.getElementById("dashOverdueIssues");
+
+    if (dashOpenIssues) dashOpenIssues.textContent = String(openIssues);
+    if (dashOverdueIssues) dashOverdueIssues.textContent = String(overdueIssues);
   }
 
-  function getEquipmentServiceTrackingMap(eq) {
-    const candidates = [
-      eq?.serviceTracking,
-      eq?.serviceStatus,
-      eq?.serviceRecords
-    ];
-
-    for (const candidate of candidates) {
-      if (candidate && typeof candidate === "object" && !Array.isArray(candidate)) {
-        return candidate;
-      }
-    }
-
-    return {};
-  }
-
-  function getTaskTracking(eq, task) {
-    const trackingMap = getEquipmentServiceTrackingMap(eq);
-    const byId = task?.id ? trackingMap[task.id] : null;
-
-    if (byId && typeof byId === "object" && !Array.isArray(byId)) {
-      return byId;
-    }
-
-    const taskName = normalizeLower(task?.task || "");
-    if (!taskName) return null;
-
-    for (const [key, value] of Object.entries(trackingMap)) {
-      if (normalizeLower(key) === taskName) {
-        return value && typeof value === "object" && !Array.isArray(value)
-          ? value
-          : null;
-      }
-    }
-
-    return null;
-  }
-
-  function getTrackingDateValue(tracking) {
-    if (!tracking) return "";
-
-    return (
-      tracking.lastCompletedDate ||
-      tracking.lastServiceDate ||
-      tracking.completedDate ||
-      tracking.lastDoneDate ||
-      tracking.lastDate ||
-      ""
+  function renderCostSummary(workOrders, purchaseOrders) {
+    const workOrderCosts = safeArray(workOrders).reduce(
+      (sum, wo) => sum + toNumber(wo.total || wo.totalCost),
+      0
     );
-  }
 
-  function getTrackingMilesValue(tracking) {
-    if (!tracking) return null;
+    const purchaseOrderCosts = safeArray(purchaseOrders).reduce(
+      (sum, po) => sum + toNumber(po.total || po.totalCost),
+      0
+    );
 
-    const candidates = [
-      tracking.lastCompletedMiles,
-      tracking.lastServiceMiles,
-      tracking.completedMiles,
-      tracking.lastMiles,
-      tracking.lastOdometer,
-      tracking.mileage
-    ];
+    const now = new Date();
+    const currentMonth = now.getMonth();
+    const currentYear = now.getFullYear();
 
-    for (const candidate of candidates) {
-      const value = Number(candidate);
-      if (Number.isFinite(value) && value >= 0) {
-        return value;
-      }
+    const workOrderCostsThisMonth = safeArray(workOrders).reduce((sum, wo) => {
+      const rawDate = wo.completed || wo.closed || wo.updatedAt || wo.opened || wo.date || wo.woDate;
+      const parsed = parseDate(rawDate);
+      if (!parsed) return sum;
+      if (parsed.getMonth() !== currentMonth || parsed.getFullYear() !== currentYear) return sum;
+      return sum + toNumber(wo.total || wo.totalCost);
+    }, 0);
+
+    const dashMonthServiceCost =
+      dom.dashMonthServiceCost ||
+      dom.dashServiceCostMonth ||
+      document.getElementById("dashMonthServiceCost") ||
+      document.getElementById("dashServiceCostMonth");
+
+    const dashYearServiceCost =
+      dom.dashYearServiceCost ||
+      dom.dashServiceCostTotal ||
+      document.getElementById("dashYearServiceCost") ||
+      document.getElementById("dashServiceCostTotal");
+
+    const dashTotalWOCost = dom.dashTotalWOCost || document.getElementById("dashTotalWOCost");
+    const dashTotalPOCost = dom.dashTotalPOCost || document.getElementById("dashTotalPOCost");
+    const dashCombinedCost = dom.dashCombinedCost || document.getElementById("dashCombinedCost");
+
+    if (dashMonthServiceCost) {
+      dashMonthServiceCost.textContent = formatMoney(workOrderCostsThisMonth);
     }
 
-    return null;
-  }
-
-  function evaluateDateStatus(task, tracking) {
-    const mode = normalizeLower(task?.dateTrackingMode || "disabled");
-
-    if (mode === "disabled") {
-      return { enabled: false, status: "ok", dueDate: null };
+    if (dashYearServiceCost) {
+      dashYearServiceCost.textContent = formatMoney(workOrderCosts);
     }
 
-    const noticeDays = Math.max(0, toNumber(task?.dateNoticeValue || 0));
-    const today = parseDate(getTodayDateString());
-
-    if (!today) {
-      return { enabled: false, status: "ok", dueDate: null };
+    if (dashTotalWOCost) {
+      dashTotalWOCost.textContent = formatMoney(workOrderCosts);
     }
 
-    let dueDate = null;
-
-    if (mode === "on" && task?.dateOnValue) {
-      dueDate = parseDate(task.dateOnValue);
+    if (dashTotalPOCost) {
+      dashTotalPOCost.textContent = formatMoney(purchaseOrderCosts);
     }
 
-    if (mode === "every" && task?.dateEveryValue) {
-      const lastCompleted = parseDate(getTrackingDateValue(tracking));
-      if (lastCompleted) {
-        dueDate = addIntervalToDate(lastCompleted, task.dateEveryValue, task.dateEveryUnit);
-      }
+    if (dashCombinedCost) {
+      dashCombinedCost.textContent = formatMoney(workOrderCosts + purchaseOrderCosts);
     }
-
-    if (!dueDate || Number.isNaN(dueDate.getTime())) {
-      return { enabled: true, status: "unknown", dueDate: null };
-    }
-
-    const dueDateOnly = parseDate(dateToYMD(dueDate));
-    const soonThreshold = addDays(dueDateOnly, -noticeDays);
-
-    if (today > dueDateOnly) {
-      return { enabled: true, status: "overdue", dueDate: dueDateOnly };
-    }
-
-    if (today >= soonThreshold) {
-      return { enabled: true, status: "dueSoon", dueDate: dueDateOnly };
-    }
-
-    return { enabled: true, status: "ok", dueDate: dueDateOnly };
-  }
-
-  function evaluateMilesStatus(task, tracking, eq) {
-    const mode = normalizeLower(task?.milesTrackingMode || "disabled");
-
-    if (mode === "disabled") {
-      return { enabled: false, status: "ok", dueMiles: null };
-    }
-
-    const currentMiles = getEquipmentCurrentMileage(eq);
-    if (currentMiles == null) {
-      return { enabled: true, status: "unknown", dueMiles: null };
-    }
-
-    const noticeMiles = Math.max(0, toNumber(task?.milesNoticeValue || 0));
-    let dueMiles = null;
-
-    if (mode === "at" && task?.milesAtValue) {
-      dueMiles = toNumber(task.milesAtValue);
-    }
-
-    if (mode === "every" && task?.milesEveryValue) {
-      const lastMiles = getTrackingMilesValue(tracking);
-      if (lastMiles != null) {
-        dueMiles = lastMiles + Math.max(0, toNumber(task.milesEveryValue));
-      }
-    }
-
-    if (!Number.isFinite(dueMiles) || dueMiles == null || dueMiles <= 0) {
-      return { enabled: true, status: "unknown", dueMiles: null };
-    }
-
-    if (currentMiles > dueMiles) {
-      return { enabled: true, status: "overdue", dueMiles };
-    }
-
-    if (currentMiles >= dueMiles - noticeMiles) {
-      return { enabled: true, status: "dueSoon", dueMiles };
-    }
-
-    return { enabled: true, status: "ok", dueMiles };
-  }
-
-  function evaluateTaskReminder(eq, task) {
-    const tracking = getTaskTracking(eq, task);
-    const dateResult = evaluateDateStatus(task, tracking);
-    const milesResult = evaluateMilesStatus(task, tracking, eq);
-
-    const statuses = [dateResult.status, milesResult.status];
-
-    if (statuses.includes("overdue")) {
-      return {
-        status: "overdue",
-        dateResult,
-        milesResult,
-        tracking
-      };
-    }
-
-    if (statuses.includes("dueSoon")) {
-      return {
-        status: "dueSoon",
-        dateResult,
-        milesResult,
-        tracking
-      };
-    }
-
-    const anyEnabled = dateResult.enabled || milesResult.enabled;
-    const anyKnown =
-      dateResult.status !== "unknown" ||
-      milesResult.status !== "unknown";
-
-    if (anyEnabled && anyKnown) {
-      return {
-        status: "ok",
-        dateResult,
-        milesResult,
-        tracking
-      };
-    }
-
-    const legacyPm = normalizeLower(eq?.pm || "");
-    if (legacyPm.includes("overdue")) {
-      return {
-        status: "overdue",
-        dateResult,
-        milesResult,
-        tracking
-      };
-    }
-
-    if (legacyPm.includes("due soon")) {
-      return {
-        status: "dueSoon",
-        dateResult,
-        milesResult,
-        tracking
-      };
-    }
-
-    return {
-      status: "ok",
-      dateResult,
-      milesResult,
-      tracking
-    };
-  }
-
-  function getServiceReminderSummary(equipmentList) {
-    const allTasks = getAllServiceTasks();
-
-    let overdueCount = 0;
-    let dueSoonCount = 0;
-    let totalAssignedTasks = 0;
-    let equipmentWithAssignedTasks = 0;
-
-    safeArray(equipmentList).forEach(eq => {
-      const tasks = getServiceTasksForEquipment(eq, allTasks);
-      if (tasks.length) {
-        equipmentWithAssignedTasks += 1;
-      }
-
-      totalAssignedTasks += tasks.length;
-
-      tasks.forEach(task => {
-        const result = evaluateTaskReminder(eq, task);
-
-        if (result.status === "overdue") overdueCount += 1;
-        if (result.status === "dueSoon") dueSoonCount += 1;
-      });
-    });
-
-    return {
-      overdueCount,
-      dueSoonCount,
-      totalAssignedTasks,
-      equipmentWithAssignedTasks
-    };
   }
 
   function renderRecentActivity(workOrders) {
-    if (!dom.dashRecentActivity) return;
+    const container =
+      dom.dashRecentActivity ||
+      document.getElementById("dashRecentActivity") ||
+      document.getElementById("recentActivityList");
 
-    dom.dashRecentActivity.innerHTML = "";
+    if (!container) return;
 
-    const recentActivity = [...workOrders]
-      .sort((a, b) =>
-        String(b.date || b.opened || "").localeCompare(
-          String(a.date || a.opened || "")
-        )
-      )
-      .slice(0, 5);
+    container.innerHTML = "";
 
-    if (!recentActivity.length) {
-      dom.dashRecentActivity.appendChild(
-        createEmptyMessage("No recent activity yet")
-      );
+    const sorted = safeArray(workOrders)
+      .slice()
+      .sort((a, b) => {
+        const aDate = parseDate(a.updatedAt || a.completed || a.closed || a.opened || a.date || a.woDate);
+        const bDate = parseDate(b.updatedAt || b.completed || b.closed || b.opened || b.date || b.woDate);
+        return (bDate?.getTime() || 0) - (aDate?.getTime() || 0);
+      })
+      .slice(0, 6);
+
+    if (!sorted.length) {
+      container.appendChild(createEmptyMessage("No recent work order activity"));
       return;
     }
 
-    recentActivity.forEach(item => {
+    sorted.forEach(item => {
       const row = document.createElement("div");
       row.className = "activityRow";
+
       row.innerHTML = `
         <div>
-          <strong>${item.workOrderNumber || item.woNumber || "Work Order"}</strong>
-          <div class="activityMeta">${item.equipmentNumber || ""}</div>
+          <div class="dueServicesRowTitle">${escapeHtml(
+            item.workOrderNumber || item.woNumber || item.number || "Work Order"
+          )}</div>
+          <div class="activityMeta">${escapeHtml(item.unit || item.equipmentNumber || "")}</div>
         </div>
-        <div class="activityMeta">${item.status || ""}</div>
+        <div class="activityMeta">${escapeHtml(item.status || "")}</div>
       `;
-      dom.dashRecentActivity.appendChild(row);
+
+      container.appendChild(row);
     });
   }
 
-  function renderTopRepairs(workOrders) {
-    if (!dom.dashTopRepairs) return;
+  function getBucketOrder() {
+    return ["due", "dueIn30Days", "overdue"];
+  }
 
-    dom.dashTopRepairs.innerHTML = "";
+  function getCategoryOrder() {
+    return ["Trucks", "Trailers", "O/O's"];
+  }
 
-    const reasonCounts = {};
+  function ensureDueServicesStateIsValid(data) {
+    if (!getBucketOrder().includes(dueServicesActiveTab)) {
+      dueServicesActiveTab = "due";
+    }
 
-    workOrders.forEach(wo => {
-      const key = normalizeText(wo.woType || wo.repair || "Other");
-      reasonCounts[key] = (reasonCounts[key] || 0) + 1;
-    });
+    const bucketData = safeObject(data?.[dueServicesActiveTab]);
 
-    const topReasons = Object.entries(reasonCounts)
-      .sort((a, b) => b[1] - a[1])
-      .slice(0, 5);
+    if (!bucketData[dueServicesActiveCategory]) {
+      dueServicesActiveCategory = "Trucks";
+    }
+  }
 
-    if (!topReasons.length) {
-      dom.dashTopRepairs.appendChild(createEmptyMessage("No repair data yet"));
+  function renderDueServicesTabs(data) {
+    const { tabs } = getDueServicesTargets();
+    if (!tabs) return;
+
+    const counts = {
+      due: getCategoryOrder().reduce(
+        (sum, category) => sum + safeArray(data?.due?.[category]).length,
+        0
+      ),
+      dueIn30Days: getCategoryOrder().reduce(
+        (sum, category) => sum + safeArray(data?.dueIn30Days?.[category]).length,
+        0
+      ),
+      overdue: getCategoryOrder().reduce(
+        (sum, category) => sum + safeArray(data?.overdue?.[category]).length,
+        0
+      )
+    };
+
+    const labelMap = {
+      due: "Due",
+      dueIn30Days: "Due in 30 Days",
+      overdue: "Overdue"
+    };
+
+    tabs.innerHTML = getBucketOrder()
+      .map(bucket => {
+        const isActive = bucket === dueServicesActiveTab;
+        const badgeClass = bucket === "overdue" ? "red" : bucket === "due" ? "orange" : "blue";
+
+        return `
+          <button
+            type="button"
+            class="dueServicesTabBtn ${isActive ? "active" : ""}"
+            data-due-services-tab="${bucket}"
+          >
+            ${labelMap[bucket]}
+            <span class="badge ${badgeClass}">${counts[bucket]}</span>
+          </button>
+        `;
+      })
+      .join("");
+  }
+
+  function renderDueServicesCategories(data) {
+    const { categories } = getDueServicesTargets();
+    if (!categories) return;
+
+    const activeGroup = safeObject(data?.[dueServicesActiveTab]);
+
+    categories.innerHTML = getCategoryOrder()
+      .map(category => {
+        const count = safeArray(activeGroup[category]).length;
+        const isActive = category === dueServicesActiveCategory;
+
+        return `
+          <button
+            type="button"
+            class="dueServicesCategoryBtn ${isActive ? "active" : ""}"
+            data-due-services-category="${category}"
+          >
+            ${category}
+            <span class="dueServicesCount">${count}</span>
+          </button>
+        `;
+      })
+      .join("");
+  }
+
+  function renderDueServicesList(data) {
+    const { list } = getDueServicesTargets();
+    if (!list) return;
+
+    const activeBucket = safeObject(data?.[dueServicesActiveTab]);
+    const items = safeArray(activeBucket[dueServicesActiveCategory]);
+
+    list.innerHTML = "";
+
+    if (!items.length) {
+      list.appendChild(createEmptyMessage("No equipment currently matches this filter."));
       return;
     }
 
-    topReasons.forEach(([reason, count]) => {
+    items.forEach(item => {
       const row = document.createElement("div");
-      row.className = "reasonRow";
+      row.className = "dueServiceRow";
+
       row.innerHTML = `
-        <span>${reason}</span>
-        <span class="badge blue">${count}</span>
+        <div class="dueServiceMain">
+          <strong>${escapeHtml(item.unit || "Unit")}</strong>
+          <div class="dueServiceMeta">
+            ${escapeHtml(item.serviceLabel || "Service")}
+            ${item.location ? ` • ${escapeHtml(item.location)}` : ""}
+          </div>
+          <div class="dueServiceMeta">
+            ${escapeHtml(item.dueReason || "No completion history")}
+            ${
+              item.lastCompletedDisplay && item.lastCompletedDisplay !== "—"
+                ? ` • Last ${escapeHtml(item.lastCompletedDisplay)}`
+                : ""
+            }
+          </div>
+        </div>
+        <div class="dueServiceType">${escapeHtml(item.type || "")}</div>
       `;
-      dom.dashTopRepairs.appendChild(row);
+
+      list.appendChild(row);
+    });
+  }
+
+  function renderDueServicesSection(equipmentList) {
+    const { section, tabs, categories, list } = getDueServicesTargets();
+    if (!section && !tabs && !categories && !list) return;
+
+    if (!canViewEquipment()) {
+      if (tabs) tabs.innerHTML = "";
+      if (categories) categories.innerHTML = "";
+      if (list) {
+        list.innerHTML = "";
+        list.appendChild(
+          createEmptyMessage("You do not have access to equipment service reminders")
+        );
+      }
+      return;
+    }
+
+    const data = buildDashboardDueServicesData(equipmentList, dashboardCache.settings);
+    ensureDueServicesStateIsValid(data);
+    renderDueServicesTabs(data);
+    renderDueServicesCategories(data);
+    renderDueServicesList(data);
+  }
+
+  function getWeatherCodeLabel(code) {
+    const map = {
+      0: "Clear",
+      1: "Mostly clear",
+      2: "Partly cloudy",
+      3: "Overcast",
+      45: "Fog",
+      48: "Freezing fog",
+      51: "Light drizzle",
+      53: "Drizzle",
+      55: "Heavy drizzle",
+      61: "Light rain",
+      63: "Rain",
+      65: "Heavy rain",
+      71: "Light snow",
+      73: "Snow",
+      75: "Heavy snow",
+      80: "Rain showers",
+      81: "Heavy showers",
+      82: "Violent showers",
+      95: "Thunderstorm"
+    };
+
+    return map[Number(code)] || "Forecast unavailable";
+  }
+
+  async function fetchWeatherSummaryByZip(zip = "62201") {
+    const cleanZip = String(zip || "62201").trim() || "62201";
+
+    const geoUrl =
+      `https://geocoding-api.open-meteo.com/v1/search?name=${encodeURIComponent(cleanZip)}&count=1&language=en&format=json`;
+
+    const geoRes = await fetch(geoUrl);
+    if (!geoRes.ok) {
+      throw new Error("Unable to look up zip code.");
+    }
+
+    const geoData = await geoRes.json();
+    const place = Array.isArray(geoData?.results) ? geoData.results[0] : null;
+
+    if (!place) {
+      throw new Error("Zip code not found.");
+    }
+
+    const forecastUrl =
+      `https://api.open-meteo.com/v1/forecast?latitude=${place.latitude}&longitude=${place.longitude}&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,weather_code&temperature_unit=fahrenheit&timezone=auto&forecast_days=3`;
+
+    const forecastRes = await fetch(forecastUrl);
+    if (!forecastRes.ok) {
+      throw new Error("Unable to load weather forecast.");
+    }
+
+    const forecastData = await forecastRes.json();
+
+    return {
+      placeName: [place.name, place.admin1].filter(Boolean).join(", "),
+      zip: cleanZip,
+      current: forecastData?.current || {},
+      daily: forecastData?.daily || {}
+    };
+  }
+
+  async function renderWeatherSummary() {
+    const { summary } = getWeatherTargets();
+    if (!summary) return;
+
+    summary.innerHTML = `<div class="muted">Loading weather...</div>`;
+
+    try {
+      const zip = dashboardCache?.settings?.weatherZip || "62201";
+      const weather = await fetchWeatherSummaryByZip(zip);
+
+      const currentTemp = weather.current?.temperature_2m;
+      const currentCode = weather.current?.weather_code;
+
+      const maxToday = Array.isArray(weather.daily?.temperature_2m_max)
+        ? weather.daily.temperature_2m_max[0]
+        : null;
+
+      const minToday = Array.isArray(weather.daily?.temperature_2m_min)
+        ? weather.daily.temperature_2m_min[0]
+        : null;
+
+      const nextDayCode = Array.isArray(weather.daily?.weather_code)
+        ? weather.daily.weather_code[1]
+        : null;
+
+      summary.innerHTML = `
+        <div class="weatherNow">
+          <div class="weatherTitle">${escapeHtml(weather.placeName)} ${escapeHtml(weather.zip)}</div>
+          <div class="weatherTemp">${currentTemp ?? "--"}°F</div>
+          <div class="weatherCond">${escapeHtml(getWeatherCodeLabel(currentCode))}</div>
+        </div>
+        <div class="weatherToday">
+          <div>Today: High ${maxToday ?? "--"}° / Low ${minToday ?? "--"}°</div>
+          <div>Tomorrow: ${escapeHtml(getWeatherCodeLabel(nextDayCode))}</div>
+        </div>
+      `;
+    } catch (error) {
+      console.error("Weather widget failed:", error);
+      summary.innerHTML = `<div class="muted">Unable to load weather.</div>`;
+    }
+  }
+
+  function bindDueServicesEvents() {
+    if (dueServicesEventsBound) return;
+    dueServicesEventsBound = true;
+
+    const { section, tabs, categories, list } = getDueServicesTargets();
+    const root = section || tabs?.parentElement || categories?.parentElement || list?.parentElement;
+    if (!root) return;
+
+    root.addEventListener("click", event => {
+      const tabBtn = event.target.closest("[data-due-services-tab]");
+      if (tabBtn) {
+        dueServicesActiveTab = String(tabBtn.dataset.dueServicesTab || "due");
+        renderDueServicesSection(safeArray(dashboardCache.equipmentList));
+        return;
+      }
+
+      const categoryBtn = event.target.closest("[data-due-services-category]");
+      if (categoryBtn) {
+        dueServicesActiveCategory = String(
+          categoryBtn.dataset.dueServicesCategory || "Trucks"
+        );
+        renderDueServicesSection(safeArray(dashboardCache.equipmentList));
+      }
+    });
+  }
+
+  function bindSyncEvents() {
+    if (syncEventsBound) return;
+    syncEventsBound = true;
+
+    window.addEventListener("fleet:equipment-changed", () => {
+      updateDashboard();
+    });
+
+    window.addEventListener("fleet:work-orders-changed", () => {
+      updateDashboard();
+    });
+
+    window.addEventListener("fleet:purchase-orders-changed", () => {
+      updateDashboard();
+    });
+
+    window.addEventListener("fleet:settings-changed", () => {
+      updateDashboard();
     });
   }
 
   async function updateDashboard() {
+    const { tabs, categories, list } = getDueServicesTargets();
+    const { summary } = getWeatherTargets();
+
+    if (!canViewDashboard()) {
+      await renderDashboardGreeting();
+
+      const recentContainer =
+        dom.dashRecentActivity ||
+        document.getElementById("dashRecentActivity") ||
+        document.getElementById("recentActivityList");
+
+      if (recentContainer) {
+        recentContainer.innerHTML = "";
+        recentContainer.appendChild(
+          createEmptyMessage("You do not have access to the dashboard")
+        );
+      }
+
+      if (summary) {
+        summary.innerHTML = "";
+        summary.appendChild(createEmptyMessage("You do not have access to the dashboard"));
+      }
+
+      if (tabs) tabs.innerHTML = "";
+      if (categories) categories.innerHTML = "";
+
+      if (list) {
+        list.innerHTML = "";
+        list.appendChild(createEmptyMessage("You do not have access to the dashboard"));
+      }
+
+      return;
+    }
+
     await hydrateDashboardData();
+    await renderDashboardGreeting();
 
-    const equipmentList = safeArray(dashboardCache.equipmentList);
-    const workOrders = safeArray(dashboardCache.workOrders);
-    const inventory = safeArray(dashboardCache.inventory);
-    const vendors = safeArray(dashboardCache.vendors);
-    const purchaseOrders = safeArray(dashboardCache.purchaseOrders);
+    const equipmentList = canViewEquipment()
+      ? safeArray(dashboardCache.equipmentList)
+      : [];
 
-    const activeCount = equipmentList.filter(
-      eq => (eq.status || "") === "Active"
-    ).length;
-    const inactiveCount = equipmentList.filter(
-      eq => (eq.status || "") === "Inactive"
-    ).length;
-    const inRepairCount = equipmentList.filter(
-      eq => (eq.status || "") === "In Repair"
-    ).length;
-    const outOfServiceCount = equipmentList.filter(
-      eq => (eq.status || "") === "Out of Service"
-    ).length;
+    const workOrders = canViewWorkOrders()
+      ? safeArray(dashboardCache.workOrders)
+      : [];
 
-    if (dom.dashActiveCount) dom.dashActiveCount.textContent = activeCount;
-    if (dom.dashInactiveCount) dom.dashInactiveCount.textContent = inactiveCount;
-    if (dom.dashInShopCount) dom.dashInShopCount.textContent = inRepairCount;
-    if (dom.dashOutOfServiceCount) {
-      dom.dashOutOfServiceCount.textContent = outOfServiceCount;
-    }
+    const purchaseOrders = canViewPurchaseOrders()
+      ? safeArray(dashboardCache.purchaseOrders)
+      : [];
 
-    const woOpen = workOrders.filter(
-      wo => (wo.status || "") === "Open"
-    ).length;
-
-    const woPending = workOrders.filter(wo =>
-      ["Pending", "In Progress"].includes(wo.status || "")
-    ).length;
-
-    const woCompleted = workOrders.filter(wo =>
-      ["Completed", "Closed"].includes(wo.status || "")
-    ).length;
-
-    if (dom.dashWOOpen) dom.dashWOOpen.textContent = woOpen;
-    if (dom.dashWOPending) dom.dashWOPending.textContent = woPending;
-    if (dom.dashWOCompleted) dom.dashWOCompleted.textContent = woCompleted;
-
-    const totalWOCost = workOrders.reduce(
-      (sum, wo) => sum + Number(wo.grandTotal || wo.total || 0),
-      0
-    );
-
-    const totalPOCost = purchaseOrders.reduce(
-      (sum, po) => sum + Number(po.total || 0),
-      0
-    );
-
-    if (dom.dashTotalWOCost) {
-      dom.dashTotalWOCost.textContent = `$${totalWOCost.toFixed(2)}`;
-    }
-
-    if (dom.dashTotalPOCost) {
-      dom.dashTotalPOCost.textContent = `$${totalPOCost.toFixed(2)}`;
-    }
-
-    if (dom.dashCombinedCost) {
-      dom.dashCombinedCost.textContent = `$${(totalWOCost + totalPOCost).toFixed(2)}`;
-    }
-
-    if (dom.dashServiceCostMonth) {
-      dom.dashServiceCostMonth.textContent = `$${totalWOCost.toFixed(2)}`;
-    }
-
-    if (dom.dashServiceCostTotal) {
-      dom.dashServiceCostTotal.textContent = `$${totalWOCost.toFixed(2)}`;
-    }
-
-    if (dom.dashInventoryCount) dom.dashInventoryCount.textContent = inventory.length;
-    if (dom.dashVendorCount) dom.dashVendorCount.textContent = vendors.length;
-    if (dom.dashPOCount) dom.dashPOCount.textContent = purchaseOrders.length;
-    if (dom.dashTotalEquipment) dom.dashTotalEquipment.textContent = equipmentList.length;
-    if (dom.dashRepairHistoryCount) dom.dashRepairHistoryCount.textContent = workOrders.length;
-
-    const assignedCount = equipmentList.filter(
-      eq => normalizeText(eq.business)
-    ).length;
-    const unassignedCount = equipmentList.length - assignedCount;
-
-    if (dom.dashAssignedCount) dom.dashAssignedCount.textContent = assignedCount;
-    if (dom.dashUnassignedCount) dom.dashUnassignedCount.textContent = unassignedCount;
-
-    const avgResolveList = workOrders.filter(
-      wo => Number(wo.resolveDays || 0) > 0
-    );
-
-    const avgResolveDays = avgResolveList.length
-      ? avgResolveList.reduce(
-          (sum, wo) => sum + Number(wo.resolveDays || 0),
-          0
-        ) / avgResolveList.length
-      : 0;
-
-    if (dom.dashAvgResolveDays) {
-      dom.dashAvgResolveDays.textContent = avgResolveDays.toFixed(1);
-    }
-
-    const serviceSummary = getServiceReminderSummary(equipmentList);
-
-    if (dom.dashOverduePM) {
-      dom.dashOverduePM.textContent = serviceSummary.overdueCount;
-    }
-
-    if (dom.dashDueSoonPM) {
-      dom.dashDueSoonPM.textContent = serviceSummary.dueSoonCount;
-    }
-
-    const openIssues = workOrders.filter(wo =>
-      ["Open", "Pending", "In Progress"].includes(wo.status || "")
-    ).length;
-
-    const overdueIssues = workOrders.filter(
-      wo => normalizeText(wo.priority).toLowerCase() === "overdue"
-    ).length;
-
-    if (dom.dashOpenIssues) dom.dashOpenIssues.textContent = openIssues;
-    if (dom.dashOverdueIssues) dom.dashOverdueIssues.textContent = overdueIssues;
-
+    renderVehicleStatus(equipmentList);
+    renderWorkOrderSummary(workOrders);
+    renderOpenIssues(workOrders);
+    renderCostSummary(workOrders, purchaseOrders);
     renderRecentActivity(workOrders);
-    renderTopRepairs(workOrders);
+    renderDueServicesSection(equipmentList);
+    await renderWeatherSummary();
+    applyDashboardLayout();
   }
 
+  applyDashboardLayout();
+  bindLayoutEvents();
+  bindDueServicesEvents();
+  bindSyncEvents();
+  bindDashboardEditorEvents();
   await updateDashboard();
 
   return {
-    updateDashboard
+    updateDashboard,
+    renderDashboardGreeting,
+    applyDashboardLayout,
+    openDashboardEditor,
+    closeDashboardEditor,
+    resetDashboardLayout
   };
 }

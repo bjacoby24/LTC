@@ -2,12 +2,11 @@ import { getDom } from "./dom.js";
 import {
   byId,
   setText,
-  setValue,
   getValue,
   normalizeText,
   normalizeLower,
-  normalizeCellValue,
-  makeId
+  makeId,
+  escapeHtml
 } from "./utils.js";
 import {
   loadEquipment,
@@ -18,7 +17,8 @@ import {
   loadEquipmentGridState,
   saveEquipmentGridSettings,
   loadWorkOrders,
-  loadSettings
+  loadSettings,
+  getLoggedInUser
 } from "./storage.js";
 import {
   getFilteredGridData,
@@ -26,16 +26,27 @@ import {
   renderGridHeaderGeneric,
   toggleRowSelection,
   clearSelections,
-  updateSelectionButtonText,
-  setGridResultCount,
-  isRowSelected
+  updateSelectionButtonText
 } from "./gridShared.js";
+import {
+  getEquipmentServiceSnapshot,
+  ensureEquipmentServiceHistory,
+  normalizeEquipmentType,
+  formatDateDisplay,
+  parseDate,
+  dateToYMD,
+  buildServiceCompletionEntry,
+  applyServiceCompletionToEquipment,
+  getServiceSelectorOptions,
+  getTemplateTaskForServiceCode
+} from "./service-tracking.js";
 
 export async function initEquipment() {
   const dom = getDom();
 
   let equipmentList = [];
   let deletedEquipment = [];
+  let workOrdersCache = [];
   let settingsCache = {
     companyName: "",
     defaultLocation: "",
@@ -43,7 +54,6 @@ export async function initEquipment() {
     serviceTasks: [],
     serviceTemplates: []
   };
-  let workOrdersCache = [];
 
   let editingId = null;
   let selectedEquipmentId = null;
@@ -53,8 +63,10 @@ export async function initEquipment() {
 
   let appModalResolver = null;
   let appModalLastFocus = null;
+
   let activeServiceTrackingEquipmentId = null;
-  let activeServiceTrackingTaskId = null;
+  let activeServiceTrackingCode = null;
+  let eventsBound = false;
 
   const DEFAULT_EQUIPMENT_COLUMNS = [
     { key: "unit", label: "Unit", visible: true, sortable: true, filterType: "none", custom: false },
@@ -83,20 +95,176 @@ export async function initEquipment() {
     return normalized;
   });
 
-  let equipmentGridState = loadEquipmentGridState({
+  if (!Array.isArray(equipmentColumns) || !equipmentColumns.length) {
+    equipmentColumns = DEFAULT_EQUIPMENT_COLUMNS.map(col => ({ ...col }));
+  }
+
+  if (!equipmentColumns.some(col => col.visible)) {
+    equipmentColumns = DEFAULT_EQUIPMENT_COLUMNS.map(col => ({ ...col }));
+  }
+
+  let equipmentGridState = {
     sortKey: "unit",
     sortDirection: "asc",
     globalSearch: "",
     filters: {},
-    headerMenuOpenFor: null
-  });
+    headerMenuOpenFor: null,
+    ...(loadEquipmentGridState() || {})
+  };
+
+  const validEquipmentColumnKeys = new Set(
+    equipmentColumns.map(col => String(col.key || "").trim()).filter(Boolean)
+  );
+
+  equipmentGridState.filters = Object.fromEntries(
+    Object.entries(equipmentGridState.filters || {}).filter(([key, value]) => {
+      return validEquipmentColumnKeys.has(key) && normalizeText(value);
+    })
+  );
 
   if (equipmentGridState.filters?.unit) {
     delete equipmentGridState.filters.unit;
   }
 
+  function safeArray(value) {
+    return Array.isArray(value) ? value : [];
+  }
+
+  function safeObject(value) {
+    return value && typeof value === "object" && !Array.isArray(value)
+      ? value
+      : {};
+  }
+
+  function addYears(date, amount) {
+    const next = new Date(date.getTime());
+    next.setFullYear(next.getFullYear() + amount);
+    return next;
+  }
+
+  function addMonths(date, amount) {
+    const next = new Date(date.getTime());
+    next.setMonth(next.getMonth() + amount);
+    return next;
+  }
+
+  function addWeeks(date, amount) {
+    const next = new Date(date.getTime());
+    next.setDate(next.getDate() + amount * 7);
+    return next;
+  }
+
+  function addDays(date, amount) {
+    const next = new Date(date.getTime());
+    next.setDate(next.getDate() + amount);
+    return next;
+  }
+
+  function getDueBucket(dueDate) {
+    if (!(dueDate instanceof Date) || Number.isNaN(dueDate.getTime())) return "unknown";
+
+    const today = parseDate(dateToYMD(new Date()));
+    const due = parseDate(dateToYMD(dueDate));
+
+    if (!today || !due) return "unknown";
+    if (today > due) return "overdue";
+    if (dateToYMD(today) === dateToYMD(due)) return "due";
+
+    const dueSoonThreshold = addDays(due, -30);
+    if (today >= dueSoonThreshold) return "dueIn30Days";
+
+    return "ok";
+  }
+
+  function suppressLiveReload(ms = 3000) {
+    if (typeof window.suppressFleetLiveReload === "function") {
+      window.suppressFleetLiveReload(ms);
+    }
+  }
+
   function persistGrid() {
     saveEquipmentGridSettings(equipmentColumns, equipmentGridState);
+  }
+
+  function getCurrentPermissions() {
+    const loggedInUser = getLoggedInUser();
+    const permissions =
+      loggedInUser &&
+      typeof loggedInUser === "object" &&
+      loggedInUser.permissions &&
+      typeof loggedInUser.permissions === "object"
+        ? loggedInUser.permissions
+        : {};
+
+    return {
+      ...permissions,
+      equipmentView: true,
+      equipmentEdit: true,
+      equipmentDelete: true,
+      deletedEquipmentAccess: true
+    };
+  }
+
+  function canViewEquipment() {
+    return !!getCurrentPermissions().equipmentView;
+  }
+
+  function canEditEquipment() {
+    return !!getCurrentPermissions().equipmentEdit;
+  }
+
+  function canDeleteEquipment() {
+    return !!getCurrentPermissions().equipmentDelete;
+  }
+
+  function canAccessDeletedEquipment() {
+    return !!getCurrentPermissions().deletedEquipmentAccess;
+  }
+
+  async function requirePermission(checkFn, title, message) {
+    if (checkFn()) return true;
+    await showMessageModal(title, message);
+    return false;
+  }
+
+  function applyEquipmentPermissionUi() {
+    const permissions = getCurrentPermissions();
+
+    if (dom.openFormBtn) {
+      dom.openFormBtn.style.display = permissions.equipmentEdit ? "" : "none";
+    }
+
+    if (dom.editProfileBtn) {
+      dom.editProfileBtn.style.display =
+        permissions.equipmentEdit && selectedEquipmentId != null ? "" : "none";
+    }
+
+    if (dom.deleteSelectedEquipmentBtn) {
+      dom.deleteSelectedEquipmentBtn.style.display = permissions.equipmentDelete ? "" : "none";
+    }
+
+    if (dom.openDeletedEquipmentBtn) {
+      dom.openDeletedEquipmentBtn.style.display = permissions.deletedEquipmentAccess ? "" : "none";
+    }
+
+    if (dom.deleteBtn) {
+      dom.deleteBtn.style.display =
+        permissions.equipmentDelete && editingId != null ? "" : "none";
+    }
+
+    if (dom.saveBtn) {
+      dom.saveBtn.style.display =
+        permissions.equipmentEdit && editingId == null ? "" : "none";
+    }
+
+    if (dom.updateBtn) {
+      dom.updateBtn.style.display =
+        permissions.equipmentEdit && editingId != null ? "" : "none";
+    }
+
+    if (dom.importEquipmentBtn) {
+      dom.importEquipmentBtn.style.display = permissions.equipmentEdit ? "" : "none";
+    }
   }
 
   async function hydrateSharedData() {
@@ -108,19 +276,19 @@ export async function initEquipment() {
         loadWorkOrders()
       ]);
 
-      equipmentList = Array.isArray(equipment) ? equipment : [];
-      deletedEquipment = Array.isArray(deleted) ? deleted : [];
-      settingsCache =
-        settings && typeof settings === "object" && !Array.isArray(settings)
-          ? settings
-          : {
-              companyName: "",
-              defaultLocation: "",
-              theme: "default",
-              serviceTasks: [],
-              serviceTemplates: []
-            };
-      workOrdersCache = Array.isArray(workOrders) ? workOrders : [];
+      equipmentList = safeArray(equipment);
+      deletedEquipment = safeArray(deleted);
+      settingsCache = {
+        companyName: "",
+        defaultLocation: "",
+        theme: "default",
+        serviceTasks: [],
+        serviceTemplates: [],
+        ...safeObject(settings),
+        serviceTasks: safeArray(settings?.serviceTasks),
+        serviceTemplates: safeArray(settings?.serviceTemplates)
+      };
+      workOrdersCache = safeArray(workOrders);
     } catch (error) {
       console.error("Failed to hydrate equipment shared data:", error);
       equipmentList = [];
@@ -139,10 +307,12 @@ export async function initEquipment() {
   async function refreshSettingsCache() {
     try {
       const settings = await loadSettings();
-      settingsCache =
-        settings && typeof settings === "object" && !Array.isArray(settings)
-          ? settings
-          : settingsCache;
+      settingsCache = {
+        ...settingsCache,
+        ...safeObject(settings),
+        serviceTasks: safeArray(settings?.serviceTasks),
+        serviceTemplates: safeArray(settings?.serviceTemplates)
+      };
     } catch (error) {
       console.error("Failed to refresh settings cache:", error);
     }
@@ -151,92 +321,46 @@ export async function initEquipment() {
   async function refreshWorkOrdersCache() {
     try {
       const workOrders = await loadWorkOrders();
-      workOrdersCache = Array.isArray(workOrders) ? workOrders : [];
+      workOrdersCache = safeArray(workOrders);
     } catch (error) {
       console.error("Failed to refresh work orders cache:", error);
     }
   }
 
   async function persistEquipment() {
+    suppressLiveReload(3000);
     await saveEquipment(equipmentList);
   }
 
   async function persistDeletedEquipment() {
+    suppressLiveReload(3000);
     await saveDeletedEquipment(deletedEquipment);
-  }
-
-  function safeArray(value) {
-    return Array.isArray(value) ? value : [];
-  }
-
-  function safeObject(value) {
-    return value && typeof value === "object" && !Array.isArray(value)
-      ? value
-      : {};
-  }
-
-  function toNumber(value) {
-    const num = Number(value);
-    return Number.isFinite(num) ? num : 0;
   }
 
   function normalizeEquipmentRecord(eq = {}) {
     return {
       ...eq,
-      id: eq.id || makeId(),
-      unit: eq.unit || "",
-      type: eq.type || "",
-      year: eq.year || "",
-      vin: eq.vin || "",
-      plate: eq.plate || "",
-      state: eq.state || "",
-      status: eq.status || "",
-      location: eq.location || "",
-      pm: eq.pm || "",
-      business: eq.business || "",
-      rim: eq.rim || "",
-      size: eq.size || "",
-      pressure: eq.pressure || "",
-      manufacturer: eq.manufacturer || "",
-      bodyClass: eq.bodyClass || "",
-      driveType: eq.driveType || "",
-      fuelType: eq.fuelType || "",
-      engine: eq.engine || "",
-      serviceTracking: safeObject(eq.serviceTracking)
-    };
-  }
-
-  function normalizeServiceTask(task = {}) {
-    const legacyLocation = String(task.location || "").trim();
-    const normalizedLocations = Array.isArray(task.locations)
-      ? task.locations.map(value => String(value || "").trim()).filter(Boolean)
-      : legacyLocation
-        ? [legacyLocation]
-        : [];
-
-    const appliesToAllLocations =
-      typeof task.appliesToAllLocations === "boolean"
-        ? task.appliesToAllLocations
-        : normalizedLocations.length === 0;
-
-    return {
-      ...task,
-      id: task.id || "",
-      task: task.task || "",
-      status: task.status || "Active",
-      appliesToAllLocations,
-      locations: appliesToAllLocations ? [] : [...new Set(normalizedLocations)],
-      dateTrackingMode: task.dateTrackingMode || "every",
-      dateEveryValue: task.dateEveryValue || "",
-      dateEveryUnit: task.dateEveryUnit || "Days",
-      dateOnValue: task.dateOnValue || "",
-      dateNoticeValue: task.dateNoticeValue || "7",
-      milesTrackingMode: task.milesTrackingMode || "every",
-      milesEveryValue: task.milesEveryValue || "",
-      milesAtValue: task.milesAtValue || "",
-      milesNoticeValue: task.milesNoticeValue || "0",
-      linkedTaskId: task.linkedTaskId || "",
-      parentTaskId: task.parentTaskId || ""
+      id: String(eq.id || makeId()),
+      unit: String(eq.unit || "").trim(),
+      type: String(eq.type || "").trim(),
+      year: String(eq.year || "").trim(),
+      vin: String(eq.vin || "").trim(),
+      plate: String(eq.plate || "").trim(),
+      state: String(eq.state || "").trim(),
+      status: String(eq.status || "").trim(),
+      location: String(eq.location || "").trim(),
+      pm: String(eq.pm || "").trim(),
+      business: String(eq.business || "").trim(),
+      rim: String(eq.rim || "").trim(),
+      size: String(eq.size || "").trim(),
+      pressure: String(eq.pressure || "").trim(),
+      manufacturer: String(eq.manufacturer || "").trim(),
+      bodyClass: String(eq.bodyClass || "").trim(),
+      driveType: String(eq.driveType || "").trim(),
+      fuelType: String(eq.fuelType || "").trim(),
+      engine: String(eq.engine || "").trim(),
+      serviceTracking: safeObject(eq.serviceTracking),
+      serviceHistory: safeObject(eq.serviceHistory)
     };
   }
 
@@ -245,7 +369,17 @@ export async function initEquipment() {
   }
 
   function getFilteredNormalizedEquipment() {
-    return getFilteredGridData(getNormalizedEquipment(), equipmentColumns, equipmentGridState);
+    return getFilteredGridData(
+      getNormalizedEquipment(),
+      equipmentColumns,
+      equipmentGridState
+    );
+  }
+
+  function closeEquipmentOptionsDropdown() {
+    if (dom.equipmentOptionsDropdown) {
+      dom.equipmentOptionsDropdown.classList.remove("show");
+    }
   }
 
   function closeAllRightPanels() {
@@ -277,14 +411,22 @@ export async function initEquipment() {
     if (dom.driveType) dom.driveType.value = "";
     if (dom.fuelType) dom.fuelType.value = "";
     if (dom.engine) dom.engine.value = "";
-
     renderCustomFieldInputs();
   }
 
   function toggleButtons(mode) {
-    if (dom.saveBtn) dom.saveBtn.style.display = mode === "save" ? "inline-block" : "none";
-    if (dom.updateBtn) dom.updateBtn.style.display = mode === "edit" ? "inline-block" : "none";
-    if (dom.deleteBtn) dom.deleteBtn.style.display = mode === "edit" ? "inline-block" : "none";
+    if (dom.saveBtn) {
+      dom.saveBtn.style.display =
+        mode === "save" && canEditEquipment() ? "inline-block" : "none";
+    }
+    if (dom.updateBtn) {
+      dom.updateBtn.style.display =
+        mode === "edit" && canEditEquipment() ? "inline-block" : "none";
+    }
+    if (dom.deleteBtn) {
+      dom.deleteBtn.style.display =
+        mode === "edit" && canDeleteEquipment() ? "inline-block" : "none";
+    }
   }
 
   function showAppModal({
@@ -303,7 +445,6 @@ export async function initEquipment() {
     const closeBtn = dom.appModalCloseBtn;
 
     if (!modal || !titleEl || !messageEl || !confirmBtn) {
-      console.warn("App modal elements are missing.");
       return Promise.resolve(showCancel ? false : true);
     }
 
@@ -345,14 +486,8 @@ export async function initEquipment() {
       };
 
       confirmBtn.onclick = () => finish(true);
-
-      if (cancelBtn) {
-        cancelBtn.onclick = () => finish(false);
-      }
-
-      if (closeBtn) {
-        closeBtn.onclick = () => finish(false);
-      }
+      if (cancelBtn) cancelBtn.onclick = () => finish(false);
+      if (closeBtn) closeBtn.onclick = () => finish(false);
 
       modal.onclick = event => {
         if (event.target === modal) {
@@ -383,73 +518,6 @@ export async function initEquipment() {
       danger: !!options.danger,
       showCancel: true
     });
-  }
-
-  function openServiceTrackingModal(equipmentId, taskId) {
-    const eq = equipmentList.find(item => String(item.id) === String(equipmentId));
-    if (!eq) return;
-
-    const tasks = getServiceTasksForEquipment(eq);
-    const task = tasks.find(item => String(item.id) === String(taskId));
-    if (!task) return;
-
-    const currentTracking = getTaskTracking(eq, taskId);
-
-    activeServiceTrackingEquipmentId = equipmentId;
-    activeServiceTrackingTaskId = taskId;
-
-    if (dom.serviceTrackingModalTitle) {
-      dom.serviceTrackingModalTitle.textContent = `Update ${task.task || "Service Task"}`;
-    }
-
-    if (dom.serviceTrackingTaskName) {
-      dom.serviceTrackingTaskName.textContent = task.task || "Untitled Task";
-    }
-
-    if (dom.serviceTrackingLastDateInput) {
-      dom.serviceTrackingLastDateInput.value = currentTracking.lastCompletedDate || "";
-    }
-
-    if (dom.serviceTrackingLastMilesInput) {
-      dom.serviceTrackingLastMilesInput.value = currentTracking.lastCompletedMiles || "";
-    }
-
-    if (dom.serviceTrackingNotesInput) {
-      dom.serviceTrackingNotesInput.value = currentTracking.notes || "";
-    }
-
-    if (dom.serviceTrackingModal) {
-      dom.serviceTrackingModal.classList.add("show");
-    }
-
-    setTimeout(() => {
-      dom.serviceTrackingLastDateInput?.focus?.();
-    }, 20);
-  }
-
-  function closeServiceTrackingModal() {
-    activeServiceTrackingEquipmentId = null;
-    activeServiceTrackingTaskId = null;
-
-    if (dom.serviceTrackingModal) {
-      dom.serviceTrackingModal.classList.remove("show");
-    }
-  }
-
-  async function saveServiceTrackingModal() {
-    if (activeServiceTrackingEquipmentId == null || !activeServiceTrackingTaskId) {
-      closeServiceTrackingModal();
-      return;
-    }
-
-    await updateTaskTracking(activeServiceTrackingEquipmentId, activeServiceTrackingTaskId, {
-      lastCompletedDate: String(dom.serviceTrackingLastDateInput?.value || "").trim(),
-      lastCompletedMiles: String(dom.serviceTrackingLastMilesInput?.value || "").trim(),
-      notes: String(dom.serviceTrackingNotesInput?.value || "").trim()
-    });
-
-    renderEquipmentServices(activeServiceTrackingEquipmentId);
-    closeServiceTrackingModal();
   }
 
   function getFormData() {
@@ -483,13 +551,6 @@ export async function initEquipment() {
     return data;
   }
 
-  function findEquipmentByUnit(unitValue) {
-    const clean = normalizeLower(unitValue);
-    if (!clean) return null;
-
-    return equipmentList.find(eq => normalizeLower(eq.unit) === clean) || null;
-  }
-
   function isDuplicateUnit(unitValue, excludeId = null) {
     const clean = normalizeLower(unitValue);
     if (!clean) return false;
@@ -514,6 +575,7 @@ export async function initEquipment() {
   }
 
   function enterEquipmentSelectionMode() {
+    if (!canDeleteEquipment()) return;
     equipmentSelectionMode = true;
     refreshEquipmentSelectionUi();
     renderEquipmentTable();
@@ -529,6 +591,14 @@ export async function initEquipment() {
   }
 
   async function deleteSelectedEquipmentFromMainPage() {
+    if (!(await requirePermission(
+      canDeleteEquipment,
+      "Permission Required",
+      "You do not have permission to delete equipment."
+    ))) {
+      return;
+    }
+
     if (!equipmentSelectionMode) {
       enterEquipmentSelectionMode();
       return;
@@ -551,13 +621,34 @@ export async function initEquipment() {
 
     if (!confirmed) return;
 
-    const selectedRecords = equipmentList.filter(eq => selectedEquipmentIds.has(String(eq.id)));
-    deletedEquipment.push(...selectedRecords);
-    equipmentList = equipmentList.filter(eq => !selectedEquipmentIds.has(String(eq.id)));
+    const normalizedSelectedIds = new Set(
+      [...selectedEquipmentIds].map(id => String(id))
+    );
 
+    const selectedRecords = equipmentList.filter(eq =>
+      normalizedSelectedIds.has(String(eq.id))
+    );
+
+    deletedEquipment.push(...selectedRecords);
+
+    equipmentList = equipmentList.filter(
+      eq => !normalizedSelectedIds.has(String(eq.id))
+    );
+
+    suppressLiveReload(3500);
     await persistEquipment();
     await persistDeletedEquipment();
+
     exitEquipmentSelectionMode(true);
+
+    if (
+      selectedEquipmentId != null &&
+      normalizedSelectedIds.has(String(selectedEquipmentId))
+    ) {
+      selectedEquipmentId = null;
+      if (dom.equipmentProfileSection) dom.equipmentProfileSection.style.display = "none";
+      if (dom.equipmentListSection) dom.equipmentListSection.style.display = "block";
+    }
   }
 
   function clearEquipmentFilters() {
@@ -586,7 +677,7 @@ export async function initEquipment() {
 
     while (equipmentColumns.some(col => col.key === key)) {
       key = `${safeBase}_${counter}`;
-      counter++;
+      counter += 1;
     }
 
     return key;
@@ -612,15 +703,18 @@ export async function initEquipment() {
     msg.className = `columnManagerMessage ${type}`;
     msg.textContent = message;
 
-    const actionRow = dom.columnManagerList.querySelector(".columnManagerActionRow");
-    if (actionRow) {
-      dom.columnManagerList.insertBefore(msg, actionRow);
-    } else {
-      dom.columnManagerList.appendChild(msg);
-    }
+    dom.columnManagerList.appendChild(msg);
   }
 
   async function addCustomEquipmentColumn(label) {
+    if (!(await requirePermission(
+      canEditEquipment,
+      "Permission Required",
+      "You do not have permission to modify equipment columns."
+    ))) {
+      return false;
+    }
+
     const cleanLabel = normalizeText(label);
     const input = byId("newCustomColumnInput");
 
@@ -660,6 +754,7 @@ export async function initEquipment() {
       [key]: item[key] ?? ""
     }));
 
+    suppressLiveReload(3000);
     await persistEquipment();
     persistGrid();
     renderEquipmentTable();
@@ -668,6 +763,14 @@ export async function initEquipment() {
   }
 
   async function deleteCustomEquipmentColumn(key) {
+    if (!(await requirePermission(
+      canEditEquipment,
+      "Permission Required",
+      "You do not have permission to modify equipment columns."
+    ))) {
+      return;
+    }
+
     const column = equipmentColumns.find(col => col.key === key);
     if (!column || !column.custom) return;
 
@@ -700,6 +803,7 @@ export async function initEquipment() {
       equipmentGridState.sortDirection = "asc";
     }
 
+    suppressLiveReload(3000);
     await persistEquipment();
     persistGrid();
     renderEquipmentTable();
@@ -756,8 +860,8 @@ export async function initEquipment() {
 
       checkbox.addEventListener("change", () => {
         col.visible = checkbox.checked;
-
         const visibleCount = equipmentColumns.filter(c => c.visible).length;
+
         if (visibleCount === 0) {
           col.visible = true;
           checkbox.checked = true;
@@ -768,7 +872,6 @@ export async function initEquipment() {
         clearColumnManagerMessage();
         persistGrid();
         renderEquipmentTable();
-        renderColumnManager();
       });
 
       const text = document.createElement("span");
@@ -778,7 +881,7 @@ export async function initEquipment() {
       left.appendChild(text);
       row.appendChild(left);
 
-      if (col.custom) {
+      if (col.custom && canEditEquipment()) {
         const deleteBtn = document.createElement("button");
         deleteBtn.type = "button";
         deleteBtn.className = "deleteColumnBtn";
@@ -792,247 +895,286 @@ export async function initEquipment() {
       dom.columnManagerList.appendChild(row);
     });
 
-    const addWrap = document.createElement("div");
-    addWrap.className = "columnManagerActionRow";
+    if (canEditEquipment()) {
+      const addWrap = document.createElement("div");
+      addWrap.className = "columnManagerActionRow";
 
-    const addTitle = document.createElement("div");
-    addTitle.className = "columnManagerModeTitle";
-    addTitle.textContent = "Add Custom Header";
+      const input = document.createElement("input");
+      input.type = "text";
+      input.id = "newCustomColumnInput";
+      input.placeholder = "New custom column";
 
-    const addRow = document.createElement("div");
-    addRow.className = "columnManagerAddRow";
-
-    const addInput = document.createElement("input");
-    addInput.type = "text";
-    addInput.id = "newCustomColumnInput";
-    addInput.placeholder = "Enter header name";
-
-    const addBtn = document.createElement("button");
-    addBtn.type = "button";
-    addBtn.textContent = "+ Add";
-
-    function submitCustomColumn() {
-      addCustomEquipmentColumn(addInput.value).then(added => {
-        if (added) addInput.value = "";
+      const btn = document.createElement("button");
+      btn.type = "button";
+      btn.textContent = "Add";
+      btn.addEventListener("click", async () => {
+        const added = await addCustomEquipmentColumn(input.value);
+        if (added) input.value = "";
       });
+
+      input.addEventListener("keydown", async event => {
+        if (event.key === "Enter") {
+          event.preventDefault();
+          const added = await addCustomEquipmentColumn(input.value);
+          if (added) input.value = "";
+        }
+      });
+
+      addWrap.appendChild(input);
+      addWrap.appendChild(btn);
+      dom.columnManagerList.appendChild(addWrap);
     }
-
-    addBtn.addEventListener("click", submitCustomColumn);
-    addInput.addEventListener("keydown", event => {
-      if (event.key === "Enter") {
-        event.preventDefault();
-        submitCustomColumn();
-      }
-    });
-
-    addRow.appendChild(addInput);
-    addRow.appendChild(addBtn);
-    addWrap.appendChild(addTitle);
-    addWrap.appendChild(addRow);
-    dom.columnManagerList.appendChild(addWrap);
-
-    const modeWrap = document.createElement("div");
-    modeWrap.className = "columnManagerModeRow";
-
-    const modeLabel = document.createElement("div");
-    modeLabel.className = "columnManagerModeTitle";
-    modeLabel.textContent = "Filter UI Mode";
-
-    const rowBtn = document.createElement("button");
-    rowBtn.type = "button";
-    rowBtn.textContent = "Top Filter Row";
-    rowBtn.disabled = equipmentFilterUiMode === "row";
-    rowBtn.addEventListener("click", () => {
-      equipmentFilterUiMode = "row";
-      renderEquipmentTable();
-      renderColumnManager();
-    });
-
-    const headerBtn = document.createElement("button");
-    headerBtn.type = "button";
-    headerBtn.textContent = "Header Menus";
-    headerBtn.disabled = equipmentFilterUiMode === "header";
-    headerBtn.addEventListener("click", () => {
-      equipmentFilterUiMode = "header";
-      renderEquipmentTable();
-      renderColumnManager();
-    });
-
-    modeWrap.appendChild(modeLabel);
-    modeWrap.appendChild(rowBtn);
-    modeWrap.appendChild(headerBtn);
-    dom.columnManagerList.appendChild(modeWrap);
   }
 
   function openColumnManager() {
+    if (!dom.columnManagerPanel) return;
     renderColumnManager();
-    if (dom.columnManagerPanel) dom.columnManagerPanel.classList.add("show");
+    dom.columnManagerPanel.style.display = "block";
   }
 
   function closeColumnManager() {
-    if (dom.columnManagerPanel) dom.columnManagerPanel.classList.remove("show");
+    if (!dom.columnManagerPanel) return;
+    dom.columnManagerPanel.style.display = "none";
+  }
+
+  function getVisibleRows() {
+    return getFilteredNormalizedEquipment();
+  }
+
+  function renderEquipmentTable() {
+    if (!dom.equipmentTable || !dom.equipmentTableHeaderRow) return;
+
+    const rows = getVisibleRows();
+
+    renderGridHeaderGeneric({
+      headerRow: dom.equipmentTableHeaderRow,
+      table: dom.equipmentTable,
+      columns: equipmentColumns,
+      data: getNormalizedEquipment(),
+      gridState: equipmentGridState,
+      filterUiMode: equipmentFilterUiMode,
+      saveFn: persistGrid,
+      renderFn: renderEquipmentTable,
+      selectedSet: selectedEquipmentIds,
+      visibleRows: rows,
+      selectAllCheckboxId: "equipmentSelectAll",
+      rowIdAttribute: "equipmentId",
+      columnFiltersHost: dom.equipmentColumnFilters,
+      resultCountEl: dom.equipmentResultCount,
+      buildColumnFiltersFn: buildColumnFiltersGeneric
+    });
+
+    let tbody = dom.equipmentTable.querySelector("tbody");
+    if (!tbody) {
+      tbody = document.createElement("tbody");
+      dom.equipmentTable.appendChild(tbody);
+    }
+
+    tbody.innerHTML = "";
+
+    if (!rows.length) {
+      tbody.innerHTML = `
+        <tr>
+          <td colspan="${equipmentColumns.filter(col => col.visible).length + 1}" class="emptyCell">
+            No equipment found.
+          </td>
+        </tr>
+      `;
+      return;
+    }
+
+    rows.forEach(eq => {
+      const tr = document.createElement("tr");
+      tr.dataset.equipmentId = String(eq.id);
+
+      if (equipmentSelectionMode) {
+        tr.classList.toggle("selectedRow", selectedEquipmentIds.has(String(eq.id)));
+      }
+
+      let html = "";
+
+      html += `
+        <td class="selectColumnCell">
+          ${equipmentSelectionMode
+            ? `<input type="checkbox" class="gridRowCheckbox" ${selectedEquipmentIds.has(String(eq.id)) ? "checked" : ""} />`
+            : ""}
+        </td>
+      `;
+
+      equipmentColumns.filter(col => col.visible).forEach(col => {
+        html += `<td>${escapeHtml(eq[col.key] ?? "")}</td>`;
+      });
+
+      tr.innerHTML = html;
+
+      tr.addEventListener("click", event => {
+        if (equipmentSelectionMode) {
+          if (event.target.closest(".gridRowCheckbox")) {
+            toggleRowSelection(selectedEquipmentIds, eq.id);
+            refreshEquipmentSelectionUi();
+            renderEquipmentTable();
+            return;
+          }
+
+          toggleRowSelection(selectedEquipmentIds, eq.id);
+          refreshEquipmentSelectionUi();
+          renderEquipmentTable();
+          return;
+        }
+
+        showEquipmentProfile(eq.id);
+      });
+
+      tbody.appendChild(tr);
+    });
+
+    refreshEquipmentSelectionUi();
+    applyEquipmentPermissionUi();
   }
 
   function openEquipmentFormForAdd() {
-    closeAllRightPanels();
-    clearForm();
+    if (!canEditEquipment()) return;
+
     editingId = null;
-    if (dom.formTitle) dom.formTitle.textContent = "Add Equipment";
+    clearForm();
+    renderCustomFieldInputs({});
     toggleButtons("save");
+
+    if (dom.formTitle) dom.formTitle.textContent = "Add Equipment";
+
+    closeAllRightPanels();
     if (dom.formPanel) dom.formPanel.style.display = "block";
   }
 
-  function openEdit(eq) {
-    if (!eq || !dom.formPanel) return;
+  function openEquipmentFormForEdit(eq) {
+    if (!canEditEquipment()) return;
+    if (!eq) return;
 
-    closeAllRightPanels();
-    dom.formPanel.style.display = "block";
+    editingId = String(eq.id);
 
-    setValue("unit", eq.unit || "");
-    setValue("type", eq.type || "");
-    setValue("year", eq.year || "");
-    setValue("vin", eq.vin || "");
-    setValue("plate", eq.plate || "");
-    setValue("state", eq.state || "");
-    setValue("status", eq.status || "");
-    setValue("location", eq.location || "");
-    setValue("pm", eq.pm || "");
-    setValue("business", eq.business || "");
-    setValue("rim", eq.rim || "");
-    setValue("size", eq.size || "");
-    setValue("pressure", eq.pressure || "");
-    setValue("manufacturer", eq.manufacturer || "");
-    setValue("bodyClass", eq.bodyClass || "");
-    setValue("driveType", eq.driveType || "");
-    setValue("fuelType", eq.fuelType || "");
-    setValue("engine", eq.engine || "");
+    if (dom.unit) dom.unit.value = eq.unit || "";
+    if (dom.type) dom.type.value = eq.type || "";
+    if (dom.year) dom.year.value = eq.year || "";
+    if (dom.vin) dom.vin.value = eq.vin || "";
+    if (dom.plate) dom.plate.value = eq.plate || "";
+    if (dom.state) dom.state.value = eq.state || "";
+    if (dom.status) dom.status.value = eq.status || "";
+    if (dom.location) dom.location.value = eq.location || "";
+    if (dom.pm) dom.pm.value = eq.pm || "";
+    if (dom.business) dom.business.value = eq.business || "";
+    if (dom.rim) dom.rim.value = eq.rim || "";
+    if (dom.size) dom.size.value = eq.size || "";
+    if (dom.pressure) dom.pressure.value = eq.pressure || "";
+    if (dom.manufacturer) dom.manufacturer.value = eq.manufacturer || "";
+    if (dom.bodyClass) dom.bodyClass.value = eq.bodyClass || "";
+    if (dom.driveType) dom.driveType.value = eq.driveType || "";
+    if (dom.fuelType) dom.fuelType.value = eq.fuelType || "";
+    if (dom.engine) dom.engine.value = eq.engine || "";
 
     renderCustomFieldInputs(eq);
+    toggleButtons("edit");
 
     if (dom.formTitle) dom.formTitle.textContent = "Edit Equipment";
-    editingId = eq.id;
-    toggleButtons("edit");
+
+    closeAllRightPanels();
+    if (dom.formPanel) dom.formPanel.style.display = "block";
   }
 
-  function getServiceTrackingMap(eq) {
-    return safeObject(eq?.serviceTracking);
-  }
+  async function saveEquipmentFromForm() {
+    if (!(await requirePermission(
+      canEditEquipment,
+      "Permission Required",
+      "You do not have permission to save equipment."
+    ))) {
+      return;
+    }
 
-  function setServiceTrackingMap(eq, trackingMap) {
-    return {
-      ...eq,
-      serviceTracking: safeObject(trackingMap)
-    };
-  }
-
-  function getTaskTracking(eq, taskId) {
-    const trackingMap = getServiceTrackingMap(eq);
-    const entry = trackingMap[taskId];
-
-    return entry && typeof entry === "object" && !Array.isArray(entry)
-      ? {
-          lastCompletedDate: entry.lastCompletedDate || "",
-          lastCompletedMiles: entry.lastCompletedMiles || "",
-          notes: entry.notes || ""
-        }
-      : {
-          lastCompletedDate: "",
-          lastCompletedMiles: "",
-          notes: ""
-        };
-  }
-
-  async function updateTaskTracking(equipmentId, taskId, updates = {}) {
-    const index = equipmentList.findIndex(eq => String(eq.id) === String(equipmentId));
-    if (index === -1) return;
-
-    const eq = normalizeEquipmentRecord(equipmentList[index]);
-    const currentTrackingMap = getServiceTrackingMap(eq);
-    const currentTaskTracking = getTaskTracking(eq, taskId);
-
-    const nextTrackingMap = {
-      ...currentTrackingMap,
-      [taskId]: {
-        ...currentTaskTracking,
-        ...updates
-      }
-    };
-
-    equipmentList[index] = setServiceTrackingMap(eq, nextTrackingMap);
-    await persistEquipment();
-  }
-
-  async function saveEquipmentRecord() {
     const data = getFormData();
 
     if (!normalizeText(data.unit)) {
-      await showMessageModal("Missing Unit Number", "Please enter a unit number.");
-      dom.unit?.focus();
+      await showMessageModal("Missing Unit", "Enter a unit number.");
       return;
     }
 
-    if (isDuplicateUnit(data.unit)) {
-      await showMessageModal("Duplicate Unit Number", "That unit number already exists.");
-      dom.unit?.focus();
-      dom.unit?.select?.();
+    if (isDuplicateUnit(data.unit, null)) {
+      await showMessageModal("Duplicate Unit", "That unit already exists.");
       return;
     }
 
-    const record = {
-      id: makeId(),
+    const record = normalizeEquipmentRecord({
       ...data,
+      id: makeId(),
+      serviceHistory: {},
       serviceTracking: {}
-    };
+    });
 
     equipmentList.push(record);
     await persistEquipment();
-    renderEquipmentTable();
 
+    editingId = null;
     if (dom.formPanel) dom.formPanel.style.display = "none";
-    clearForm();
+    renderEquipmentTable();
   }
 
-  async function updateEquipmentRecord() {
+  async function updateEquipmentFromForm() {
+    if (!(await requirePermission(
+      canEditEquipment,
+      "Permission Required",
+      "You do not have permission to update equipment."
+    ))) {
+      return;
+    }
+
     if (editingId == null) return;
 
     const data = getFormData();
 
     if (!normalizeText(data.unit)) {
-      await showMessageModal("Missing Unit Number", "Please enter a unit number.");
-      dom.unit?.focus();
+      await showMessageModal("Missing Unit", "Enter a unit number.");
       return;
     }
 
     if (isDuplicateUnit(data.unit, editingId)) {
-      await showMessageModal("Duplicate Unit Number", "That unit number already exists.");
-      dom.unit?.focus();
-      dom.unit?.select?.();
+      await showMessageModal("Duplicate Unit", "That unit already exists.");
       return;
     }
 
     const index = equipmentList.findIndex(eq => String(eq.id) === String(editingId));
-    if (index === -1) return;
+    if (index < 0) return;
 
-    equipmentList[index] = {
+    equipmentList[index] = normalizeEquipmentRecord({
       ...equipmentList[index],
       ...data,
-      id: equipmentList[index].id,
-      serviceTracking: safeObject(equipmentList[index].serviceTracking)
-    };
+      id: editingId
+    });
 
     await persistEquipment();
-    renderEquipmentTable();
 
     if (dom.formPanel) dom.formPanel.style.display = "none";
-    showEquipmentProfile(editingId);
+    renderEquipmentTable();
+
+    if (selectedEquipmentId != null && String(selectedEquipmentId) === String(editingId)) {
+      showEquipmentProfile(editingId);
+    }
   }
 
-  async function deleteEquipmentRecord(id = editingId) {
-    if (id == null) return;
+  async function deleteSingleEquipmentFromForm() {
+    if (!(await requirePermission(
+      canDeleteEquipment,
+      "Permission Required",
+      "You do not have permission to delete equipment."
+    ))) {
+      return;
+    }
+
+    if (editingId == null) return;
+
+    const eq = equipmentList.find(item => String(item.id) === String(editingId));
+    if (!eq) return;
 
     const confirmed = await showConfirmModal(
       "Delete Equipment",
-      "Delete this equipment?",
+      `Delete unit "${eq.unit}"?`,
       {
         confirmText: "Delete",
         cancelText: "Cancel",
@@ -1042,331 +1184,150 @@ export async function initEquipment() {
 
     if (!confirmed) return;
 
-    const record = equipmentList.find(eq => String(eq.id) === String(id));
-    if (!record) return;
-
-    deletedEquipment.push(record);
-    equipmentList = equipmentList.filter(eq => String(eq.id) !== String(id));
+    deletedEquipment.push(eq);
+    equipmentList = equipmentList.filter(item => String(item.id) !== String(editingId));
 
     await persistEquipment();
     await persistDeletedEquipment();
 
+    editingId = null;
     if (dom.formPanel) dom.formPanel.style.display = "none";
-
-    if (dom.equipmentProfileSection && String(selectedEquipmentId) === String(id)) {
-      dom.equipmentProfileSection.style.display = "none";
-      if (dom.equipmentListSection) dom.equipmentListSection.style.display = "block";
-    }
-
-    selectedEquipmentId = null;
     renderEquipmentTable();
   }
 
-  function getServiceTasksForEquipment(eq) {
-    const serviceTasks = Array.isArray(settingsCache.serviceTasks) ? settingsCache.serviceTasks : [];
-    const equipmentLocation = normalizeLower(eq?.location || "");
-
-    return serviceTasks
-      .map(normalizeServiceTask)
-      .filter(task => {
-        const status = normalizeLower(task?.status || "active");
-        if (status === "inactive") return false;
-
-        if (task.appliesToAllLocations) return true;
-
-        const taskLocations = Array.isArray(task.locations) ? task.locations : [];
-        if (!taskLocations.length) return true;
-
-        return taskLocations.some(location => normalizeLower(location) === equipmentLocation);
-      })
-      .sort((a, b) => {
-        const aName = normalizeLower(a?.task || "");
-        const bName = normalizeLower(b?.task || "");
-        return aName.localeCompare(bName);
-      });
+  function getSelectedEquipmentRecord() {
+    if (selectedEquipmentId == null) return null;
+    return equipmentList.find(eq => String(eq.id) === String(selectedEquipmentId)) || null;
   }
 
-  function formatServiceSchedule(task) {
-    const parts = [];
-
-    if (task.dateTrackingMode === "every" && task.dateEveryValue) {
-      parts.push(`Every ${task.dateEveryValue} ${task.dateEveryUnit || "Days"}`);
-    } else if (task.dateTrackingMode === "on" && task.dateOnValue) {
-      parts.push(`On ${task.dateOnValue}`);
-    } else if (task.dateTrackingMode !== "disabled" && task.dateNoticeValue) {
-      parts.push(`Notice ${task.dateNoticeValue} day(s) early`);
-    }
-
-    if (task.milesTrackingMode === "every" && task.milesEveryValue) {
-      parts.push(`Every ${task.milesEveryValue} miles`);
-    } else if (task.milesTrackingMode === "at" && task.milesAtValue) {
-      parts.push(`At ${task.milesAtValue} miles`);
-    }
-
-    if (
-      task.milesTrackingMode !== "disabled" &&
-      task.milesNoticeValue &&
-      String(task.milesNoticeValue) !== "0"
-    ) {
-      parts.push(`Notice ${task.milesNoticeValue} mile(s) early`);
-    }
-
-    return parts.length ? parts.join(" • ") : "No interval set";
-  }
-
-  function findTaskNameById(taskId, allTasks) {
-    if (!taskId) return "";
-    const match = allTasks.find(task => String(task.id) === String(taskId));
-    return match?.task || "";
-  }
-
-  function formatTaskLocations(task, equipmentLocation = "") {
-    const normalizedTask = normalizeServiceTask(task);
-
-    if (normalizedTask.appliesToAllLocations) {
-      return "All Locations";
-    }
-
-    if (Array.isArray(normalizedTask.locations) && normalizedTask.locations.length) {
-      return normalizedTask.locations.join(", ");
-    }
-
-    return equipmentLocation || "All Locations";
-  }
-
-  function parseDate(value) {
-    if (!value) return null;
-    const parsed = new Date(String(value));
-    return Number.isNaN(parsed.getTime()) ? null : parsed;
-  }
-
-  function dateToYMD(date) {
-    if (!(date instanceof Date) || Number.isNaN(date.getTime())) return "";
-    const year = date.getFullYear();
-    const month = String(date.getMonth() + 1).padStart(2, "0");
-    const day = String(date.getDate()).padStart(2, "0");
-    return `${year}-${month}-${day}`;
-  }
-
-  function addDays(date, amount) {
-    const next = new Date(date.getTime());
-    next.setDate(next.getDate() + amount);
-    return next;
-  }
-
-  function addWeeks(date, amount) {
-    return addDays(date, amount * 7);
-  }
-
-  function addMonths(date, amount) {
-    const next = new Date(date.getTime());
-    next.setMonth(next.getMonth() + amount);
-    return next;
-  }
-
-  function addYears(date, amount) {
-    const next = new Date(date.getTime());
-    next.setFullYear(next.getFullYear() + amount);
-    return next;
-  }
-
-  function addIntervalToDate(date, value, unit) {
-    const amount = Math.max(0, toNumber(value));
-    if (!(date instanceof Date) || Number.isNaN(date.getTime()) || amount <= 0) {
-      return null;
-    }
-
-    switch (normalizeLower(unit)) {
-      case "day":
-      case "days":
-        return addDays(date, amount);
-      case "week":
-      case "weeks":
-        return addWeeks(date, amount);
-      case "month":
-      case "months":
-        return addMonths(date, amount);
-      case "year":
-      case "years":
-        return addYears(date, amount);
-      default:
-        return addDays(date, amount);
-    }
-  }
-
-  function getEquipmentCurrentMileage(eq) {
-    const candidates = [
-      eq?.currentMileage,
-      eq?.mileage,
-      eq?.odometer,
-      eq?.currentMiles,
-      eq?.miles
-    ];
-
-    for (const candidate of candidates) {
-      const value = Number(candidate);
-      if (Number.isFinite(value) && value >= 0) {
-        return value;
-      }
-    }
-
-    return null;
-  }
-
-  function getTaskStatus(eq, task) {
-    const tracking = getTaskTracking(eq, task.id);
-    const today = new Date();
-    const todayYmd = dateToYMD(today);
-
-    let dateStatus = "ok";
-    let milesStatus = "ok";
-
-    if (normalizeLower(task.dateTrackingMode) === "on" && task.dateOnValue) {
-      const dueDate = task.dateOnValue;
-      const noticeDays = Math.max(0, toNumber(task.dateNoticeValue));
-
-      if (todayYmd > dueDate) {
-        dateStatus = "overdue";
-      } else if (noticeDays > 0) {
-        const dueDateObj = parseDate(dueDate);
-        if (dueDateObj) {
-          const soonDate = addDays(dueDateObj, -noticeDays);
-          if (today >= soonDate) {
-            dateStatus = "dueSoon";
-          }
-        }
-      }
-    }
-
-    if (
-      normalizeLower(task.dateTrackingMode) === "every" &&
-      task.dateEveryValue &&
-      tracking.lastCompletedDate
-    ) {
-      const lastDate = parseDate(tracking.lastCompletedDate);
-      const dueDate = addIntervalToDate(lastDate, task.dateEveryValue, task.dateEveryUnit);
-
-      if (dueDate) {
-        const dueDateYmd = dateToYMD(dueDate);
-        const noticeDays = Math.max(0, toNumber(task.dateNoticeValue));
-
-        if (todayYmd > dueDateYmd) {
-          dateStatus = "overdue";
-        } else if (noticeDays > 0) {
-          const soonDate = addDays(dueDate, -noticeDays);
-          if (today >= soonDate) {
-            dateStatus = "dueSoon";
-          }
-        }
-      }
-    }
-
-    if (normalizeLower(task.milesTrackingMode) === "at" && task.milesAtValue) {
-      const currentMileage = getEquipmentCurrentMileage(eq);
-      const dueMiles = toNumber(task.milesAtValue);
-      const noticeMiles = Math.max(0, toNumber(task.milesNoticeValue));
-
-      if (currentMileage != null && dueMiles > 0) {
-        if (currentMileage > dueMiles) {
-          milesStatus = "overdue";
-        } else if (currentMileage >= dueMiles - noticeMiles) {
-          milesStatus = "dueSoon";
-        }
-      }
-    }
-
-    if (
-      normalizeLower(task.milesTrackingMode) === "every" &&
-      task.milesEveryValue &&
-      tracking.lastCompletedMiles !== ""
-    ) {
-      const currentMileage = getEquipmentCurrentMileage(eq);
-      const lastMiles = toNumber(tracking.lastCompletedMiles);
-      const dueMiles = lastMiles + Math.max(0, toNumber(task.milesEveryValue));
-      const noticeMiles = Math.max(0, toNumber(task.milesNoticeValue));
-
-      if (currentMileage != null && dueMiles > 0) {
-        if (currentMileage > dueMiles) {
-          milesStatus = "overdue";
-        } else if (currentMileage >= dueMiles - noticeMiles) {
-          milesStatus = "dueSoon";
-        }
-      }
-    }
-
-    if (dateStatus === "overdue" || milesStatus === "overdue") {
-      return "Overdue";
-    }
-
-    if (dateStatus === "dueSoon" || milesStatus === "dueSoon") {
-      return "Due Soon";
-    }
-
-    return "OK";
-  }
-
-  function getTrackingSummary(eq, task) {
-    const tracking = getTaskTracking(eq, task.id);
-
-    return {
-      lastCompletedDate: tracking.lastCompletedDate || "-",
-      lastCompletedMiles: tracking.lastCompletedMiles || "-",
-      notes: tracking.notes || ""
-    };
-  }
-
-  function renderEquipmentServices(equipmentId) {
-    if (!dom.equipmentServicesTableBody) return;
-
-    const eq = equipmentList.find(item => String(item.id) === String(equipmentId));
+  function renderProfileBasics(eq) {
     if (!eq) return;
 
-    const allTasks = (settingsCache.serviceTasks || []).map(normalizeServiceTask);
-    const tasks = getServiceTasksForEquipment(eq);
-    dom.equipmentServicesTableBody.innerHTML = "";
+    setText("profileUnit", eq.unit || "—");
+    setText("profileType", eq.type || "—");
+    setText("profileYear", eq.year || "—");
+    setText("profileVin", eq.vin || "—");
+    setText("profilePlate", eq.plate || "—");
+    setText("profileState", eq.state || "—");
+    setText("profileStatus", eq.status || "—");
+    setText("profileLocation", eq.location || "—");
+    setText("profilePM", eq.pm || "—");
+    setText("profileBusiness", eq.business || "—");
+    setText("profileRim", eq.rim || "—");
+    setText("profileSize", eq.size || "—");
+    setText("profilePressure", eq.pressure || "—");
+    setText("profileManufacturer", eq.manufacturer || "—");
+    setText("profileBodyClass", eq.bodyClass || "—");
+    setText("profileDriveType", eq.driveType || "—");
+    setText("profileFuelType", eq.fuelType || "—");
+    setText("profileEngine", eq.engine || "—");
+  }
 
-    if (!tasks.length) {
-      const empty = document.createElement("tr");
-      empty.innerHTML = `<td colspan="8" class="emptyCell">No matching service intervals for this equipment location</td>`;
-      dom.equipmentServicesTableBody.appendChild(empty);
+  function renderEquipmentHistory(eq) {
+    const tbody = byId("equipmentHistoryTable")?.querySelector("tbody");
+    if (!tbody) return;
+
+    const unit = normalizeLower(eq.unit);
+    const rows = safeArray(workOrdersCache)
+      .filter(wo => normalizeLower(wo.equipmentNumber) === unit)
+      .sort((a, b) =>
+        String(b.opened || b.date || b.woDate || "").localeCompare(
+          String(a.opened || a.date || a.woDate || "")
+        )
+      );
+
+    tbody.innerHTML = "";
+
+    if (!rows.length) {
+      tbody.innerHTML = `<tr><td colspan="5" class="emptyCell">No work order history yet.</td></tr>`;
+      setText("profileRepairCount", "0");
+      setText("profileRepairCost", "0.00");
+      setText("filteredRepairCount", "0");
+      setText("filteredRepairCost", "0.00");
       return;
     }
 
-    tasks.forEach(task => {
+    rows.forEach(wo => {
+      const tr = document.createElement("tr");
+      tr.innerHTML = `
+        <td>${escapeHtml(wo.workOrderNumber || wo.woNumber || "—")}</td>
+        <td>${escapeHtml(wo.opened || wo.date || wo.woDate || "—")}</td>
+        <td>${escapeHtml(wo.status || "—")}</td>
+        <td>${escapeHtml(wo.notes || "—")}</td>
+        <td>${escapeHtml(String(wo.total || "0.00"))}</td>
+      `;
+      tbody.appendChild(tr);
+    });
+
+    const totalCost = rows.reduce((sum, wo) => sum + Number(wo.total || 0), 0);
+    setText("profileRepairCount", String(rows.length));
+    setText("profileRepairCost", totalCost.toFixed(2));
+    setText("filteredRepairCount", String(rows.length));
+    setText("filteredRepairCost", totalCost.toFixed(2));
+  }
+
+  function renderEquipmentServices(equipmentId = selectedEquipmentId) {
+    const tbody = byId("equipmentServicesTable")?.querySelector("tbody");
+    if (!tbody) return;
+
+    tbody.innerHTML = "";
+
+    const eq = equipmentList.find(item => String(item.id) === String(equipmentId));
+    if (!eq) {
+      tbody.innerHTML = `<tr><td colspan="8" class="emptyCell">No assigned services found for this equipment.</td></tr>`;
+      return;
+    }
+
+    const snapshot = getEquipmentServiceSnapshot(
+      {
+        ...eq,
+        serviceHistory: ensureEquipmentServiceHistory(eq, settingsCache)
+      },
+      settingsCache
+    );
+
+    if (!snapshot.services.length) {
+      tbody.innerHTML = `<tr><td colspan="8" class="emptyCell">No assigned services found for this equipment.</td></tr>`;
+      return;
+    }
+
+    snapshot.services.forEach(service => {
+      const matchedTemplateTask = getTemplateTaskForServiceCode(eq, settingsCache, service.code);
+      const selectorOption =
+        getServiceSelectorOptions(eq, settingsCache).find(item => item.code === service.code) || null;
+
       const row = document.createElement("tr");
-
-      const linkedName = findTaskNameById(task.linkedTaskId, allTasks);
-      const parentName = findTaskNameById(task.parentTaskId, allTasks);
-      const trackingSummary = getTrackingSummary(eq, task);
-      const status = getTaskStatus(eq, task);
-
       row.innerHTML = `
-        <td>${formatTaskLocations(task, eq.location || "")}</td>
-        <td>${task.task || "Untitled Task"}</td>
-        <td>${formatServiceSchedule(task)}</td>
-        <td>${trackingSummary.lastCompletedDate}</td>
-        <td>${trackingSummary.lastCompletedMiles}</td>
-        <td>${status}</td>
-        <td>${
-          [
-            parentName ? `Parent: ${parentName}` : "",
-            linkedName ? `Linked: ${linkedName}` : "",
-            trackingSummary.notes ? `Notes: ${trackingSummary.notes}` : ""
-          ].filter(Boolean).join(" • ") || "-"
-        }</td>
+        <td>${escapeHtml(eq.location || "—")}</td>
         <td>
-          <button
-            type="button"
-            class="serviceUpdateBtn"
-            data-service-equipment-id="${eq.id}"
-            data-service-task-id="${task.id}"
-          >
-            Update
-          </button>
+          <strong>${escapeHtml(service.label || "Service")}</strong>
+          <div class="muted">${escapeHtml(service.category || "—")}</div>
+        </td>
+        <td>${escapeHtml(matchedTemplateTask?.templateName || selectorOption?.templateName || "—")}</td>
+        <td>${escapeHtml(service.lastCompletedAt || "—")}</td>
+        <td>${escapeHtml(service.lastMeter || "—")}</td>
+        <td>
+          <strong>${
+            service.bucket === "overdue"
+              ? "Overdue"
+              : service.bucket === "due"
+                ? "Due"
+                : service.bucket === "dueIn30Days"
+                  ? "Due in 30 Days"
+                  : service.bucket === "ok"
+                    ? "Scheduled"
+                    : "No History"
+          }</strong>
+          <div class="muted">${service.dueDate ? `Due ${escapeHtml(formatDateDisplay(service.dueDate))}` : "No completion history"}</div>
+        </td>
+        <td>
+          ${service.notes ? `<div>${escapeHtml(service.notes)}</div>` : `<div class="muted">—</div>`}
+        </td>
+        <td>
+          ${canEditEquipment() ? `<button type="button" class="smallBtn" data-update-service-code="${escapeHtml(service.code)}">Update Tracking</button>` : ""}
         </td>
       `;
-
-      dom.equipmentServicesTableBody.appendChild(row);
+      tbody.appendChild(row);
     });
   }
 
@@ -1374,395 +1335,159 @@ export async function initEquipment() {
     const eq = equipmentList.find(item => String(item.id) === String(equipmentId));
     if (!eq) return;
 
-    selectedEquipmentId = eq.id;
+    selectedEquipmentId = String(eq.id);
 
     if (dom.equipmentListSection) dom.equipmentListSection.style.display = "none";
     if (dom.equipmentProfileSection) dom.equipmentProfileSection.style.display = "block";
 
-    dom.profileTabs?.forEach(tab => tab.classList.remove("active"));
-    dom.profileTabContents?.forEach(content => content.classList.remove("active"));
-
-    const overviewTabButton = document.querySelector('[data-profile-tab="overviewTab"]');
-    const overviewTab = byId("overviewTab");
-
-    if (overviewTabButton) overviewTabButton.classList.add("active");
-    if (overviewTab) overviewTab.classList.add("active");
-
-    setValue("historyStatusFilter", "All");
-    setValue("historyDateFrom", "");
-    setValue("historyDateTo", "");
-
-    setText("profileUnit", eq.unit || "");
-    setText("profileType", eq.type || "");
-    setText("profileYear", eq.year || "");
-    setText("profileVin", eq.vin || "");
-    setText("profilePlate", eq.plate || "");
-    setText("profileState", eq.state || "");
-    setText("profileStatus", eq.status || "");
-    setText("profileLocation", eq.location || "");
-    setText("profilePM", eq.pm || "");
-    setText("profileBusiness", eq.business || "");
-    setText("profileRim", eq.rim || "");
-    setText("profileSize", eq.size || "");
-    setText("profilePressure", eq.pressure || "");
-    setText("profileManufacturer", eq.manufacturer || "");
-    setText("profileBodyClass", eq.bodyClass || "");
-    setText("profileDriveType", eq.driveType || "");
-    setText("profileFuelType", eq.fuelType || "");
-    setText("profileEngine", eq.engine || "");
-    setText("profileCylinders", "");
-
-    renderEquipmentHistory(eq.id);
+    renderProfileBasics(eq);
+    renderEquipmentHistory(eq);
     renderEquipmentServices(eq.id);
+    applyEquipmentPermissionUi();
   }
 
-  function renderEquipmentHistory(equipmentId) {
-    if (!dom.equipmentHistoryTableBody) return;
+  function closeEquipmentProfile() {
+    selectedEquipmentId = null;
+    if (dom.equipmentProfileSection) dom.equipmentProfileSection.style.display = "none";
+    if (dom.equipmentListSection) dom.equipmentListSection.style.display = "block";
+    applyEquipmentPermissionUi();
+  }
 
-    const statusFilter = getValue("historyStatusFilter");
-    const dateFrom = getValue("historyDateFrom");
-    const dateTo = getValue("historyDateTo");
+  function openServiceTrackingModal(equipmentId, serviceCode) {
+    const eq = equipmentList.find(item => String(item.id) === String(equipmentId));
+    if (!eq || !dom.serviceTrackingModal) return;
 
-    let equipmentWorkOrders = workOrdersCache.filter(
-      wo =>
-        String(wo.equipmentId) === String(equipmentId) ||
-        String(wo.equipmentNumber || "") ===
-          String(
-            equipmentList.find(eq => String(eq.id) === String(equipmentId))?.unit || ""
-          )
+    const snapshot = getEquipmentServiceSnapshot(
+      {
+        ...eq,
+        serviceHistory: ensureEquipmentServiceHistory(eq, settingsCache)
+      },
+      settingsCache
     );
 
-    const totalAllRepairCost = equipmentWorkOrders.reduce(
-      (sum, wo) => sum + Number(wo.grandTotal || wo.total || 0),
-      0
-    );
+    const service = snapshot.services.find(item => String(item.code) === String(serviceCode));
+    if (!service) return;
 
-    if (statusFilter && statusFilter !== "All") {
-      equipmentWorkOrders = equipmentWorkOrders.filter(
-        wo => normalizeLower(wo.status) === normalizeLower(statusFilter)
-      );
+    activeServiceTrackingEquipmentId = String(equipmentId);
+    activeServiceTrackingCode = String(serviceCode);
+
+    if (dom.serviceTrackingTaskName) {
+      dom.serviceTrackingTaskName.textContent = service.label || "Service";
     }
 
-    if (dateFrom) {
-      equipmentWorkOrders = equipmentWorkOrders.filter(wo => {
-        const woDate = String(wo.dateScheduled || wo.date || wo.opened || "");
-        return woDate >= dateFrom;
-      });
+    if (dom.serviceTrackingLastDateInput) {
+      dom.serviceTrackingLastDateInput.value = service.lastCompletedAt || "";
     }
 
-    if (dateTo) {
-      equipmentWorkOrders = equipmentWorkOrders.filter(wo => {
-        const woDate = String(wo.dateScheduled || wo.date || wo.opened || "");
-        return woDate <= dateTo;
-      });
+    if (dom.serviceTrackingLastMilesInput) {
+      dom.serviceTrackingLastMilesInput.value = service.lastMeter || "";
     }
 
-    const filteredRepairCost = equipmentWorkOrders.reduce(
-      (sum, wo) => sum + Number(wo.grandTotal || wo.total || 0),
-      0
-    );
+    if (dom.serviceTrackingNotesInput) {
+      dom.serviceTrackingNotesInput.value = service.notes || "";
+    }
 
-    setText(
-      "profileRepairCount",
-      String(
-        workOrdersCache.filter(
-          wo =>
-            String(wo.equipmentId) === String(equipmentId) ||
-            String(wo.equipmentNumber || "") ===
-              String(
-                equipmentList.find(eq => String(eq.id) === String(equipmentId))?.unit || ""
-              )
-        ).length
-      )
-    );
-    setText("profileRepairCost", `$${totalAllRepairCost.toFixed(2)}`);
-    setText("filteredRepairCount", String(equipmentWorkOrders.length));
-    setText("filteredRepairCost", `$${filteredRepairCost.toFixed(2)}`);
+    dom.serviceTrackingModal.classList.add("show");
+  }
 
-    dom.equipmentHistoryTableBody.innerHTML = "";
+  function closeServiceTrackingModal() {
+    activeServiceTrackingEquipmentId = null;
+    activeServiceTrackingCode = null;
+    dom.serviceTrackingModal?.classList.remove("show");
+  }
 
-    if (!equipmentWorkOrders.length) {
-      const empty = document.createElement("tr");
-      empty.innerHTML = `<td colspan="6" class="emptyCell">No repair history found</td>`;
-      dom.equipmentHistoryTableBody.appendChild(empty);
+  async function saveServiceTrackingModal() {
+    if (!(await requirePermission(
+      canEditEquipment,
+      "Permission Required",
+      "You do not have permission to update service tracking."
+    ))) {
       return;
     }
 
-    equipmentWorkOrders
-      .sort((a, b) =>
-        String(b.dateScheduled || b.date || b.opened || "").localeCompare(
-          String(a.dateScheduled || a.date || a.opened || "")
-        )
-      )
-      .forEach(wo => {
-        const row = document.createElement("tr");
-        row.innerHTML = `
-          <td>${wo.workOrderNumber || wo.woNumber || ""}</td>
-          <td>${wo.dateScheduled || wo.date || wo.opened || ""}</td>
-          <td>${wo.status || ""}</td>
-          <td>${wo.woType || wo.serviceType || ""}</td>
-          <td>${wo.assignee || ""}</td>
-          <td>$${Number(wo.grandTotal || wo.total || 0).toFixed(2)}</td>
-        `;
-        dom.equipmentHistoryTableBody.appendChild(row);
-      });
-  }
+    if (!activeServiceTrackingEquipmentId || !activeServiceTrackingCode) return;
 
-  function renderEquipmentTable() {
-    if (!dom.equipmentTableBody || !dom.equipmentTableHeaderRow) return;
+    const index = equipmentList.findIndex(
+      item => String(item.id) === String(activeServiceTrackingEquipmentId)
+    );
+    if (index < 0) return;
 
-    const normalizedRows = getFilteredNormalizedEquipment();
+    const eq = equipmentList[index];
+    const matchedTask = getTemplateTaskForServiceCode(eq, settingsCache, activeServiceTrackingCode);
 
-    renderGridHeaderGeneric({
-      table: dom.equipmentTable,
-      headerRow: dom.equipmentTableHeaderRow,
-      columnFiltersHost: dom.equipmentColumnFilters,
-      columns: equipmentColumns,
-      gridState: equipmentGridState,
-      filterUiMode: equipmentFilterUiMode,
-      selectionMode: equipmentSelectionMode,
-      selectAllCheckboxId: "selectAllEquipmentCheckbox",
-      visibleRows: normalizedRows,
-      selectedSet: selectedEquipmentIds,
-      resultCountEl: dom.equipmentResultCount,
-      persistGrid,
-      renderFn: renderEquipmentTable,
-      buildColumnFiltersFn: buildColumnFiltersGeneric
+    const entry = buildServiceCompletionEntry({
+      code: activeServiceTrackingCode,
+      completedAt: dom.serviceTrackingLastDateInput?.value || "",
+      meter: dom.serviceTrackingLastMilesInput?.value || "",
+      workOrderId: "",
+      workOrderNumber: "",
+      notes: dom.serviceTrackingNotesInput?.value || "",
+      templateId: matchedTask?.templateId || "",
+      templateName: matchedTask?.templateName || "",
+      sourceTaskId: matchedTask?.id || "",
+      sourceTaskName: matchedTask?.task || ""
     });
 
-    dom.equipmentTableBody.innerHTML = "";
+    if (!entry) return;
 
-    normalizedRows.forEach(eq => {
-      const row = document.createElement("tr");
-      row.dataset.equipmentId = eq.id;
-
-      if (equipmentSelectionMode) {
-        const selectTd = document.createElement("td");
-        selectTd.className = "selectColumnCell";
-
-        const checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.className = "gridRowCheckbox";
-        checkbox.checked = isRowSelected(selectedEquipmentIds, eq.id);
-
-        checkbox.addEventListener("click", event => event.stopPropagation());
-        checkbox.addEventListener("change", () => {
-          toggleRowSelection(selectedEquipmentIds, eq.id);
-          refreshEquipmentSelectionUi();
-        });
-
-        selectTd.appendChild(checkbox);
-        row.appendChild(selectTd);
-      }
-
-      equipmentColumns
-        .filter(col => col.visible)
-        .forEach(col => {
-          const td = document.createElement("td");
-          td.textContent = normalizeCellValue(eq[col.key]);
-          row.appendChild(td);
-        });
-
-      row.addEventListener("click", () => {
-        if (equipmentSelectionMode) {
-          toggleRowSelection(selectedEquipmentIds, eq.id);
-          renderEquipmentTable();
-        } else {
-          showEquipmentProfile(eq.id);
-        }
-      });
-
-      if (isRowSelected(selectedEquipmentIds, eq.id)) {
-        row.classList.add("selectedRow");
-      }
-
-      dom.equipmentTableBody.appendChild(row);
-    });
-
-    setGridResultCount(dom.equipmentResultCount, normalizedRows);
-    refreshEquipmentSelectionUi();
-  }
-
-  function bindProfileTabs() {
-    if (!dom.profileTabs?.length) return;
-
-    dom.profileTabs.forEach(tab => {
-      tab.addEventListener("click", async () => {
-        const targetId = tab.dataset.profileTab;
-        if (!targetId) return;
-
-        dom.profileTabs.forEach(btn => btn.classList.remove("active"));
-        dom.profileTabContents.forEach(content => content.classList.remove("active"));
-
-        tab.classList.add("active");
-        const target = byId(targetId);
-        if (target) target.classList.add("active");
-
-        if (targetId === "servicesTab" && selectedEquipmentId != null) {
-          await refreshSettingsCache();
-          renderEquipmentServices(selectedEquipmentId);
-        }
-
-        if (targetId === "workOrdersTab" && selectedEquipmentId != null) {
-          await refreshWorkOrdersCache();
-          renderEquipmentHistory(selectedEquipmentId);
-        }
-      });
-    });
-  }
-
-  async function importEquipmentRows(rows) {
-    if (!Array.isArray(rows) || !rows.length) {
-      await showMessageModal("Import Failed", "No rows found to import.");
-      return;
-    }
-
-    function getImportedField(rawRow, possibleHeaders = []) {
-      for (const key of Object.keys(rawRow || {})) {
-        const normalizedKey = normalizeLower(key);
-        if (possibleHeaders.some(header => normalizeLower(header) === normalizedKey)) {
-          return String(rawRow[key] ?? "").trim();
-        }
-      }
-      return "";
-    }
-
-    let importedCount = 0;
-    let skippedCount = 0;
-
-    rows.forEach(rawRow => {
-      const unit = getImportedField(rawRow, ["unit", "unit number", "equipment", "equipment number"]);
-      if (!unit) {
-        skippedCount += 1;
-        return;
-      }
-
-      const existing = findEquipmentByUnit(unit);
-
-      const importedEquipment = {
-        id: existing?.id || makeId(),
-        unit,
-        type: getImportedField(rawRow, ["type"]),
-        year: getImportedField(rawRow, ["year"]),
-        vin: getImportedField(rawRow, ["vin"]),
-        plate: getImportedField(rawRow, ["plate", "license plate"]),
-        state: getImportedField(rawRow, ["state", "state/prov", "state/province"]),
-        status: getImportedField(rawRow, ["status"]) || "Active",
-        location: getImportedField(rawRow, ["location"]),
-        pm: getImportedField(rawRow, ["pm", "pm template"]),
-        business: getImportedField(rawRow, ["business", "assigned business"]),
-        rim: getImportedField(rawRow, ["rim"]),
-        size: getImportedField(rawRow, ["size", "tire size"]),
-        pressure: getImportedField(rawRow, ["pressure", "tire pressure"]),
-        manufacturer: getImportedField(rawRow, ["manufacturer"]),
-        bodyClass: getImportedField(rawRow, ["body class"]),
-        driveType: getImportedField(rawRow, ["drive type"]),
-        fuelType: getImportedField(rawRow, ["fuel type"]),
-        engine: getImportedField(rawRow, ["engine"]),
-        serviceTracking: safeObject(existing?.serviceTracking)
-      };
-
-      equipmentColumns
-        .filter(col => col.custom)
-        .forEach(col => {
-          importedEquipment[col.key] = getImportedField(rawRow, [col.label, col.key]);
-        });
-
-      if (existing) {
-        const index = equipmentList.findIndex(eq => String(eq.id) === String(existing.id));
-        if (index >= 0) {
-          equipmentList[index] = {
-            ...equipmentList[index],
-            ...importedEquipment,
-            id: existing.id,
-            serviceTracking: safeObject(equipmentList[index].serviceTracking)
-          };
-        }
-      } else {
-        equipmentList.push(importedEquipment);
-      }
-
-      importedCount += 1;
-    });
-
+    equipmentList[index] = applyServiceCompletionToEquipment(eq, entry);
     await persistEquipment();
-    renderEquipmentTable();
 
-    await showMessageModal(
-      "Import Complete",
-      `Imported/updated: ${importedCount}. Skipped: ${skippedCount}.`
-    );
-  }
+    closeServiceTrackingModal();
 
-  function handleEquipmentImport(file) {
-    if (!file || !window.XLSX) return;
-
-    const reader = new FileReader();
-
-    reader.onload = async function (event) {
-      try {
-        const data = event.target.result;
-        const workbook = XLSX.read(data, { type: "array" });
-        const firstSheetName = workbook.SheetNames[0];
-        const worksheet = workbook.Sheets[firstSheetName];
-        const rows = XLSX.utils.sheet_to_json(worksheet, { defval: "" });
-
-        await importEquipmentRows(rows);
-      } catch (error) {
-        console.error("Equipment import failed:", error);
-        await showMessageModal("Import Failed", "Unable to import the selected file.");
-      } finally {
-        if (dom.equipmentImportInput) dom.equipmentImportInput.value = "";
+    if (selectedEquipmentId != null) {
+      const selected = getSelectedEquipmentRecord();
+      if (selected) {
+        renderEquipmentServices(selected.id);
       }
-    };
-
-    reader.readAsArrayBuffer(file);
-  }
-
-  async function decodeVin() {
-    const vin = getValue("vin").trim().toUpperCase();
-
-    if (vin.length !== 17) {
-      await showMessageModal("Invalid VIN", "Please enter a full 17-character VIN.");
-      dom.vin?.focus();
-      return;
-    }
-
-    if (dom.decodeVinBtn) {
-      dom.decodeVinBtn.disabled = true;
-      dom.decodeVinBtn.textContent = "Decoding...";
     }
 
     try {
-      const url = `https://vpic.nhtsa.dot.gov/api/vehicles/DecodeVinValues/${encodeURIComponent(vin)}?format=json`;
-      const response = await fetch(url);
-      const data = await response.json();
-      const result = data?.Results?.[0];
-
-      if (!result) {
-        await showMessageModal("VIN Not Found", "No VIN data found.");
-        return;
-      }
-
-      if (!getValue("year") && result.ModelYear) setValue("year", result.ModelYear);
-      if (!getValue("manufacturer") && result.Make) setValue("manufacturer", result.Make);
-      if (!getValue("type") && result.Model) setValue("type", result.Model);
-      if (!getValue("bodyClass") && result.BodyClass) setValue("bodyClass", result.BodyClass);
-      if (!getValue("driveType") && result.DriveType) setValue("driveType", result.DriveType);
-      if (!getValue("fuelType") && result.FuelTypePrimary) setValue("fuelType", result.FuelTypePrimary);
-      if (!getValue("engine") && result.EngineModel) setValue("engine", result.EngineModel);
+      window.dispatchEvent(new CustomEvent("fleet:equipment-changed"));
     } catch (error) {
-      console.error("VIN decode failed:", error);
-      await showMessageModal("VIN Decode Failed", "Unable to decode VIN.");
-    } finally {
-      if (dom.decodeVinBtn) {
-        dom.decodeVinBtn.disabled = false;
-        dom.decodeVinBtn.textContent = "Decode VIN";
-      }
+      console.warn("Unable to dispatch equipment change event:", error);
     }
   }
 
-  function bindEvents() {
+  async function refreshEquipmentFromRemote() {
+    try {
+      equipmentList = safeArray(await loadEquipment());
+      renderEquipmentTable();
+
+      if (selectedEquipmentId != null) {
+        const eq = equipmentList.find(item => String(item.id) === String(selectedEquipmentId));
+        if (eq) {
+          renderProfileBasics(eq);
+          renderEquipmentHistory(eq);
+          renderEquipmentServices(eq.id);
+        } else {
+          closeEquipmentProfile();
+        }
+      }
+    } catch (error) {
+      console.error("Unable to refresh equipment:", error);
+    }
+  }
+
+  function bindEventsOnce() {
+    if (eventsBound) return;
+    eventsBound = true;
+
+    if (Array.isArray(dom.profileTabs) && dom.profileTabs.length) {
+  dom.profileTabs.forEach(tab => {
+    tab.addEventListener("click", () => {
+      const targetId = String(tab.dataset.profileTab || "").trim();
+      if (!targetId) return;
+
+      dom.profileTabs.forEach(item => item.classList.remove("active"));
+      dom.profileTabContents.forEach(content => content.classList.remove("active"));
+
+      tab.classList.add("active");
+      document.getElementById(targetId)?.classList.add("active");
+    });
+  });
+}
+
     if (dom.openFormBtn) {
       dom.openFormBtn.addEventListener("click", openEquipmentFormForAdd);
     }
@@ -1774,93 +1499,30 @@ export async function initEquipment() {
     }
 
     if (dom.saveBtn) {
-      dom.saveBtn.addEventListener("click", () => {
-        saveEquipmentRecord();
-      });
+      dom.saveBtn.addEventListener("click", saveEquipmentFromForm);
     }
 
     if (dom.updateBtn) {
-      dom.updateBtn.addEventListener("click", () => {
-        updateEquipmentRecord();
-      });
+      dom.updateBtn.addEventListener("click", updateEquipmentFromForm);
     }
 
     if (dom.deleteBtn) {
-      dom.deleteBtn.addEventListener("click", () => {
-        deleteEquipmentRecord();
-      });
+      dom.deleteBtn.addEventListener("click", deleteSingleEquipmentFromForm);
+    }
+
+    if (dom.backToEquipmentListBtn) {
+      dom.backToEquipmentListBtn.addEventListener("click", closeEquipmentProfile);
     }
 
     if (dom.editProfileBtn) {
       dom.editProfileBtn.addEventListener("click", () => {
-        const eq = equipmentList.find(item => String(item.id) === String(selectedEquipmentId));
-        if (eq) openEdit(eq);
+        const eq = getSelectedEquipmentRecord();
+        if (eq) openEquipmentFormForEdit(eq);
       });
-    }
-
-    if (dom.backToEquipmentListBtn) {
-      dom.backToEquipmentListBtn.addEventListener("click", () => {
-        if (dom.equipmentProfileSection) dom.equipmentProfileSection.style.display = "none";
-        if (dom.equipmentListSection) dom.equipmentListSection.style.display = "block";
-      });
-    }
-
-    if (dom.manageColumnsBtn) {
-      dom.manageColumnsBtn.addEventListener("click", () => {
-        dom.equipmentOptionsDropdown?.classList.remove("show");
-        openColumnManager();
-      });
-    }
-
-    if (dom.closeColumnManagerBtn) {
-      dom.closeColumnManagerBtn.addEventListener("click", closeColumnManager);
-    }
-
-    if (dom.equipmentGlobalSearch) {
-      dom.equipmentGlobalSearch.value = equipmentGridState.globalSearch || "";
-      dom.equipmentGlobalSearch.addEventListener("input", event => {
-        equipmentGridState.globalSearch = event.target.value || "";
-        persistGrid();
-        renderEquipmentTable();
-      });
-    }
-
-    if (dom.clearEquipmentFiltersBtn) {
-      dom.clearEquipmentFiltersBtn.addEventListener("click", () => {
-        dom.equipmentOptionsDropdown?.classList.remove("show");
-        clearEquipmentFilters();
-      });
-    }
-
-    if (dom.equipmentOptionsBtn && dom.equipmentOptionsDropdown) {
-      dom.equipmentOptionsBtn.addEventListener("click", event => {
-        event.stopPropagation();
-        dom.equipmentOptionsDropdown.classList.toggle("show");
-      });
-    }
-
-    if (dom.importEquipmentBtn) {
-      dom.importEquipmentBtn.addEventListener("click", () => {
-        dom.equipmentOptionsDropdown?.classList.remove("show");
-        dom.equipmentImportInput?.click();
-      });
-    }
-
-    if (dom.equipmentImportInput) {
-      dom.equipmentImportInput.addEventListener("change", event => {
-        const file = event.target.files?.[0];
-        if (file) handleEquipmentImport(file);
-      });
-    }
-
-    if (dom.decodeVinBtn) {
-      dom.decodeVinBtn.addEventListener("click", decodeVin);
     }
 
     if (dom.deleteSelectedEquipmentBtn) {
-      dom.deleteSelectedEquipmentBtn.addEventListener("click", () => {
-        deleteSelectedEquipmentFromMainPage();
-      });
+      dom.deleteSelectedEquipmentBtn.addEventListener("click", deleteSelectedEquipmentFromMainPage);
     }
 
     if (dom.cancelEquipmentSelectionBtn) {
@@ -1869,51 +1531,58 @@ export async function initEquipment() {
       });
     }
 
-    if (dom.applyHistoryFiltersBtn) {
-      dom.applyHistoryFiltersBtn.addEventListener("click", async () => {
-        if (selectedEquipmentId != null) {
-          await refreshWorkOrdersCache();
-          renderEquipmentHistory(selectedEquipmentId);
-        }
+    if (dom.equipmentGlobalSearch) {
+      dom.equipmentGlobalSearch.addEventListener("input", () => {
+        equipmentGridState.globalSearch = dom.equipmentGlobalSearch.value || "";
+        persistGrid();
+        renderEquipmentTable();
       });
     }
 
-    if (dom.clearHistoryFiltersBtn) {
-      dom.clearHistoryFiltersBtn.addEventListener("click", async () => {
-        setValue("historyStatusFilter", "All");
-        setValue("historyDateFrom", "");
-        setValue("historyDateTo", "");
-        if (selectedEquipmentId != null) {
-          await refreshWorkOrdersCache();
-          renderEquipmentHistory(selectedEquipmentId);
-        }
+    if (dom.equipmentOptionsBtn) {
+      dom.equipmentOptionsBtn.addEventListener("click", event => {
+        event.stopPropagation();
+        dom.equipmentOptionsDropdown?.classList.toggle("show");
       });
     }
 
-    if (dom.equipmentServicesTableBody) {
-      dom.equipmentServicesTableBody.addEventListener("click", event => {
-        const button = event.target.closest(".serviceUpdateBtn");
-        if (!button) return;
-
-        const equipmentId = button.dataset.serviceEquipmentId;
-        const taskId = button.dataset.serviceTaskId;
-
-        if (!equipmentId || !taskId) return;
-        openServiceTrackingModal(equipmentId, taskId);
+    if (dom.manageColumnsBtn) {
+      dom.manageColumnsBtn.addEventListener("click", () => {
+        closeEquipmentOptionsDropdown();
+        openColumnManager();
       });
     }
 
-    if (dom.closeServiceTrackingModalBtn) {
-      dom.closeServiceTrackingModalBtn.addEventListener("click", closeServiceTrackingModal);
+    if (dom.clearEquipmentFiltersBtn) {
+      dom.clearEquipmentFiltersBtn.addEventListener("click", () => {
+        closeEquipmentOptionsDropdown();
+        clearEquipmentFilters();
+      });
     }
 
-    if (dom.cancelServiceTrackingBtn) {
-      dom.cancelServiceTrackingBtn.addEventListener("click", closeServiceTrackingModal);
+    if (dom.closeColumnManagerBtn) {
+      dom.closeColumnManagerBtn.addEventListener("click", closeColumnManager);
     }
 
-    if (dom.saveServiceTrackingBtn) {
-      dom.saveServiceTrackingBtn.addEventListener("click", saveServiceTrackingModal);
+    if (dom.serviceTrackingCloseBtn) {
+      dom.serviceTrackingCloseBtn.addEventListener("click", closeServiceTrackingModal);
     }
+
+    if (dom.serviceTrackingCancelBtn) {
+      dom.serviceTrackingCancelBtn.addEventListener("click", closeServiceTrackingModal);
+    }
+
+    if (dom.serviceTrackingSaveBtn) {
+      dom.serviceTrackingSaveBtn.addEventListener("click", () => {
+        saveServiceTrackingModal();
+      });
+    }
+
+    byId("equipmentServicesTable")?.addEventListener("click", event => {
+      const btn = event.target.closest("[data-update-service-code]");
+      if (!btn || selectedEquipmentId == null) return;
+      openServiceTrackingModal(selectedEquipmentId, btn.dataset.updateServiceCode);
+    });
 
     document.addEventListener("click", event => {
       if (
@@ -1922,40 +1591,65 @@ export async function initEquipment() {
         !dom.equipmentOptionsDropdown.contains(event.target) &&
         !dom.equipmentOptionsBtn.contains(event.target)
       ) {
-        dom.equipmentOptionsDropdown.classList.remove("show");
+        closeEquipmentOptionsDropdown();
       }
+    });
 
-      if (dom.serviceTrackingModal && event.target === dom.serviceTrackingModal) {
-        closeServiceTrackingModal();
+    window.addEventListener("fleet:equipment-changed", () => {
+      refreshEquipmentFromRemote();
+    });
+
+    window.addEventListener("fleet:settings-changed", async () => {
+      await refreshSettingsCache();
+      if (selectedEquipmentId != null) {
+        renderEquipmentServices(selectedEquipmentId);
+      }
+    });
+
+    window.addEventListener("fleet:work-orders-changed", async () => {
+      await refreshWorkOrdersCache();
+      await refreshEquipmentFromRemote();
+      if (selectedEquipmentId != null) {
+        const eq = equipmentList.find(item => String(item.id) === String(selectedEquipmentId));
+        if (eq) {
+          renderEquipmentHistory(eq);
+          renderEquipmentServices(selectedEquipmentId);
+        }
+      }
+    });
+
+    window.addEventListener("storage", event => {
+      if (event.key === "fleetLoggedInUser") {
+        applyEquipmentPermissionUi();
+        renderEquipmentTable();
+        if (selectedEquipmentId != null) {
+          renderEquipmentServices(selectedEquipmentId);
+        }
       }
     });
 
     document.addEventListener("keydown", event => {
-      if (event.key === "Escape") {
-        if (dom.serviceTrackingModal?.classList.contains("show")) {
-          closeServiceTrackingModal();
-          return;
-        }
-
-        if (dom.appModal?.classList.contains("show") && appModalResolver) {
-          const resolver = appModalResolver;
-          appModalResolver = null;
-          dom.appModal.classList.remove("show");
-          resolver(false);
-        }
+      if (event.key === "Escape" && dom.serviceTrackingModal?.classList.contains("show")) {
+        closeServiceTrackingModal();
       }
     });
-
-    bindProfileTabs();
   }
 
-  bindEvents();
   await hydrateSharedData();
+
+  if (dom.equipmentGlobalSearch) {
+    dom.equipmentGlobalSearch.value = equipmentGridState.globalSearch || "";
+  }
+
+  bindEventsOnce();
   renderEquipmentTable();
+  applyEquipmentPermissionUi();
 
   return {
-    renderEquipmentTable,
-    showEquipmentProfile,
-    openEquipmentFormForAdd
-  };
+  refresh: refreshEquipmentFromRemote,
+  renderEquipmentTable,
+  showEquipmentProfile,
+  openEquipmentFormForAdd,
+  applyEquipmentPermissionUi
+};
 }

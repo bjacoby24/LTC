@@ -58,6 +58,7 @@ body {
   letter-spacing: 0.04em;
 }
 
+.woSubLabel,
 .subtitle {
   margin: 2px 0 0;
   color: var(--muted);
@@ -171,6 +172,63 @@ button:hover {
   border-color: var(--warning);
 }
 
+.woAppModal {
+  position: fixed;
+  inset: 0;
+  z-index: 6000;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 20px;
+  background: rgba(15, 23, 42, 0.42);
+}
+
+.woAppModal.show {
+  display: flex;
+}
+
+.woAppModalCard {
+  width: min(460px, 100%);
+  background: #ffffff;
+  border: 1px solid #d9e2ec;
+  border-radius: 16px;
+  box-shadow: 0 20px 50px rgba(15, 23, 42, 0.22);
+  overflow: hidden;
+}
+
+.woAppModalHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 14px 16px;
+  border-bottom: 1px solid #e6edf5;
+}
+
+.woAppModalHeader h3 {
+  margin: 0;
+}
+
+.woAppModalBody {
+  padding: 16px;
+}
+
+.woAppModalBody p {
+  margin: 0;
+  line-height: 1.5;
+}
+
+.woAppModalActions {
+  display: flex;
+  justify-content: flex-end;
+  gap: 10px;
+  padding: 0 16px 16px;
+}
+
+.woAppModalActions button {
+  min-width: 96px;
+}
+
 .woLayout {
   display: grid;
   grid-template-columns: minmax(0, 1fr) 280px;
@@ -231,6 +289,14 @@ button:hover {
   grid-template-columns: repeat(3, minmax(0, 1fr));
 }
 
+.workOrderDetailsGrid {
+  align-items: start;
+}
+
+.fieldGroup {
+  min-width: 0;
+}
+
 .fieldGroup label {
   display: block;
   font-size: 11px;
@@ -245,6 +311,22 @@ button:hover {
   margin-top: 4px;
   color: var(--muted);
   font-size: 11px;
+  line-height: 1.4;
+}
+
+#equipmentMatchInfo,
+#woServiceTaskHelp,
+#woAssigneeHelp {
+  min-height: 16px;
+}
+
+#woServiceTaskSelect[multiple],
+#woAssignee[multiple] {
+  max-width: 220px;
+  min-height: 148px;
+  height: auto;
+  padding-top: 6px;
+  padding-bottom: 6px;
 }
 
 input,

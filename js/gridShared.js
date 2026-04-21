@@ -8,9 +8,9 @@ export function getVisibleColumns(columns = []) {
 }
 
 export function getColumnFilterOptions(data = [], key) {
-  const values = [...new Set(
-    data.map(item => normalizeCellValue(item?.[key])).filter(Boolean)
-  )];
+  const values = [
+    ...new Set(data.map(item => normalizeCellValue(item?.[key])).filter(Boolean))
+  ];
 
   return values.sort((a, b) => a.localeCompare(b));
 }
@@ -22,18 +22,31 @@ export function getGridFilterDisplayValue(gridState, key) {
 /* -------------------------
    FILTER MENU HELPERS
 ------------------------- */
-export function closeGridHeaderMenus(menuClass, buttonClass, gridState, saveFn = null) {
+export function closeGridHeaderMenus(
+  menuClass,
+  buttonClass,
+  gridState,
+  saveFn = null
+) {
   if (gridState) {
     gridState.headerMenuOpenFor = null;
   }
 
   document.querySelectorAll(`.${menuClass}`).forEach(menu => menu.remove());
-  document.querySelectorAll(`.${buttonClass}`).forEach(btn => btn.classList.remove("active"));
+  document
+    .querySelectorAll(`.${buttonClass}`)
+    .forEach(btn => btn.classList.remove("active"));
 
   if (saveFn) saveFn();
 }
 
-export function setGridColumnFilterValue(gridState, saveFn, renderFn, key, value) {
+export function setGridColumnFilterValue(
+  gridState,
+  saveFn,
+  renderFn,
+  key,
+  value
+) {
   if (!gridState.filters) gridState.filters = {};
 
   if (!normalizeText(value)) {
@@ -56,7 +69,8 @@ export function clearGridColumnFilterValue(gridState, saveFn, renderFn, key) {
 
 export function toggleGridSort(gridState, saveFn, renderFn, key) {
   if (gridState.sortKey === key) {
-    gridState.sortDirection = gridState.sortDirection === "asc" ? "desc" : "asc";
+    gridState.sortDirection =
+      gridState.sortDirection === "asc" ? "desc" : "asc";
   } else {
     gridState.sortKey = key;
     gridState.sortDirection = "asc";
@@ -164,7 +178,13 @@ export function toggleHeaderFilterMenuGeneric({
     applyBtn.type = "button";
     applyBtn.textContent = "Apply";
     applyBtn.addEventListener("click", () => {
-      setGridColumnFilterValue(gridState, saveFn, renderFn, columnKey, select.value);
+      setGridColumnFilterValue(
+        gridState,
+        saveFn,
+        renderFn,
+        columnKey,
+        select.value
+      );
       closeGridHeaderMenus(menuClass, buttonClass, gridState, saveFn);
     });
 
@@ -193,7 +213,13 @@ export function toggleHeaderFilterMenuGeneric({
     applyBtn.type = "button";
     applyBtn.textContent = "Apply";
     applyBtn.addEventListener("click", () => {
-      setGridColumnFilterValue(gridState, saveFn, renderFn, columnKey, input.value);
+      setGridColumnFilterValue(
+        gridState,
+        saveFn,
+        renderFn,
+        columnKey,
+        input.value
+      );
       closeGridHeaderMenus(menuClass, buttonClass, gridState, saveFn);
     });
 
@@ -275,7 +301,13 @@ export function buildColumnFiltersGeneric({
 
       select.value = getGridFilterDisplayValue(gridState, col.key);
       select.addEventListener("change", () => {
-        setGridColumnFilterValue(gridState, saveFn, renderFn, col.key, select.value);
+        setGridColumnFilterValue(
+          gridState,
+          saveFn,
+          renderFn,
+          col.key,
+          select.value
+        );
       });
 
       filterItem.appendChild(select);
@@ -286,7 +318,13 @@ export function buildColumnFiltersGeneric({
       input.value = getGridFilterDisplayValue(gridState, col.key);
 
       input.addEventListener("input", () => {
-        setGridColumnFilterValue(gridState, saveFn, renderFn, col.key, input.value);
+        setGridColumnFilterValue(
+          gridState,
+          saveFn,
+          renderFn,
+          col.key,
+          input.value
+        );
       });
 
       filterItem.appendChild(input);
@@ -300,11 +338,11 @@ export function buildColumnFiltersGeneric({
    SELECTION HELPERS
 ------------------------- */
 export function isRowSelected(selectedSet, recordId) {
-  return selectedSet.has(Number(recordId));
+  return selectedSet.has(String(recordId));
 }
 
 export function toggleRowSelection(selectedSet, recordId) {
-  const id = Number(recordId);
+  const id = String(recordId);
 
   if (selectedSet.has(id)) {
     selectedSet.delete(id);
@@ -315,7 +353,8 @@ export function toggleRowSelection(selectedSet, recordId) {
 
 export function setAllVisibleSelections(selectedSet, visibleRows, checked) {
   visibleRows.forEach(row => {
-    const id = Number(row.id);
+    const id = String(row.id);
+
     if (checked) {
       selectedSet.add(id);
     } else {
@@ -347,9 +386,10 @@ export function updateSelectionButtonText({
 
   if (actionButton) {
     if (selectionMode) {
-      actionButton.textContent = selectedSet.size > 0
-        ? `${defaultText} (${selectedSet.size})`
-        : confirmText;
+      actionButton.textContent =
+        selectedSet.size > 0
+          ? `${defaultText} (${selectedSet.size})`
+          : confirmText;
     } else {
       actionButton.textContent = defaultText;
     }
@@ -364,7 +404,7 @@ export function refreshSelectionUi({
   visibleRows
 }) {
   document.querySelectorAll(`${tableSelector} tbody tr`).forEach(row => {
-    const id = Number(row.dataset[rowIdAttribute]);
+    const id = String(row.dataset[rowIdAttribute] || "");
     const checked = selectedSet.has(id);
 
     row.classList.toggle("selectedRow", checked);
@@ -375,8 +415,10 @@ export function refreshSelectionUi({
 
   const selectAllCheckbox = byId(selectAllCheckboxId);
   if (selectAllCheckbox) {
-    const visibleIds = visibleRows.map(item => Number(item.id));
-    const selectedVisibleCount = visibleIds.filter(id => selectedSet.has(id)).length;
+    const visibleIds = visibleRows.map(item => String(item.id));
+    const selectedVisibleCount = visibleIds.filter(id =>
+      selectedSet.has(id)
+    ).length;
 
     selectAllCheckbox.checked =
       visibleIds.length > 0 && selectedVisibleCount === visibleIds.length;
@@ -389,11 +431,15 @@ export function refreshSelectionUi({
 /* -------------------------
    RESULT COUNT
 ------------------------- */
-export function setGridResultCount(resultEl, rows) {
+export function setGridResultCount(resultEl, rowsOrCount) {
   if (!resultEl) return;
-  resultEl.textContent = `${rows.length} record${rows.length === 1 ? "" : "s"}`;
-}
 
+  const count = Array.isArray(rowsOrCount)
+    ? rowsOrCount.length
+    : Number(rowsOrCount) || 0;
+
+  resultEl.textContent = `${count} record${count === 1 ? "" : "s"}`;
+}
 /* -------------------------
    GENERIC HEADER RENDER
 ------------------------- */
@@ -406,31 +452,40 @@ export function renderGridHeaderGeneric({
   filterUiMode,
   saveFn,
   renderFn,
-  selectedSet,
-  visibleRows,
-  selectAllCheckboxId,
-  rowIdAttribute,
-  sortable = true
+  selectedSet = null,
+  visibleRows = [],
+  selectAllCheckboxId = null,
+  rowIdAttribute = null,
+  sortable = true,
+  selectionMode = true,
+  columnFiltersHost = null,
+  resultCountEl = null,
+  buildColumnFiltersFn = null
 }) {
   if (!headerRow || !table) return;
 
   headerRow.innerHTML = "";
 
-  const selectTh = document.createElement("th");
-  selectTh.className = "selectColumnHeader";
+  const showSelectionColumn =
+    !!selectionMode && !!selectedSet && !!selectAllCheckboxId;
 
-  const selectAll = document.createElement("input");
-  selectAll.type = "checkbox";
-  selectAll.id = selectAllCheckboxId;
-  selectAll.title = "Select all visible";
+  if (showSelectionColumn) {
+    const selectTh = document.createElement("th");
+    selectTh.className = "selectColumnHeader";
 
-  selectAll.addEventListener("change", () => {
-    setAllVisibleSelections(selectedSet, visibleRows, selectAll.checked);
-    renderFn?.();
-  });
+    const selectAll = document.createElement("input");
+    selectAll.type = "checkbox";
+    selectAll.id = selectAllCheckboxId;
+    selectAll.title = "Select all visible";
 
-  selectTh.appendChild(selectAll);
-  headerRow.appendChild(selectTh);
+    selectAll.addEventListener("change", () => {
+      setAllVisibleSelections(selectedSet, visibleRows, selectAll.checked);
+      renderFn?.();
+    });
+
+    selectTh.appendChild(selectAll);
+    headerRow.appendChild(selectTh);
+  }
 
   getVisibleColumns(columns).forEach(col => {
     const th = document.createElement("th");
@@ -460,7 +515,9 @@ export function renderGridHeaderGeneric({
     sortArea.appendChild(sortIcon);
 
     if (sortable && col.sortable) {
-      sortArea.addEventListener("click", () => toggleGridSort(gridState, saveFn, renderFn, col.key));
+      sortArea.addEventListener("click", () =>
+        toggleGridSort(gridState, saveFn, renderFn, col.key)
+      );
     }
 
     headerWrap.appendChild(sortArea);
@@ -469,7 +526,9 @@ export function renderGridHeaderGeneric({
       const filterBtn = document.createElement("button");
       filterBtn.type = "button";
       filterBtn.className = "headerFilterBtn";
-      filterBtn.textContent = getGridFilterDisplayValue(gridState, col.key) ? "●" : "⏷";
+      filterBtn.textContent = getGridFilterDisplayValue(gridState, col.key)
+        ? "●"
+        : "⏷";
       filterBtn.title = `Filter ${col.label}`;
 
       filterBtn.addEventListener("click", e => {
@@ -492,11 +551,29 @@ export function renderGridHeaderGeneric({
     headerRow.appendChild(th);
   });
 
-  refreshSelectionUi({
-    tableSelector: `#${table.id}`,
-    rowIdAttribute,
-    selectedSet,
-    selectAllCheckboxId,
-    visibleRows
-  });
+  if (typeof buildColumnFiltersFn === "function" && columnFiltersHost) {
+    buildColumnFiltersFn({
+      container: columnFiltersHost,
+      columns,
+      data,
+      gridState,
+      filterUiMode,
+      saveFn,
+      renderFn
+    });
+  }
+
+  if (resultCountEl) {
+    setGridResultCount(resultCountEl, visibleRows);
+  }
+
+  if (showSelectionColumn && rowIdAttribute) {
+    refreshSelectionUi({
+      tableSelector: `#${table.id}`,
+      rowIdAttribute,
+      selectedSet,
+      selectAllCheckboxId,
+      visibleRows
+    });
+  }
 }

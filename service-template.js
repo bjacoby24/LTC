@@ -4,6 +4,8 @@ import { normalizeText } from "./js/utils.js";
 let currentTemplate = null;
 let settingsCache = {};
 let equipmentCache = [];
+let templateModalResolver = null;
+let templateModalLastFocus = null;
 
 const dom = {};
 
@@ -137,20 +139,23 @@ function normalizeServiceTask(task = {}) {
   return {
     id: task.id || makeServiceTaskId(),
     task: String(task.task || "").trim(),
-    parentTaskId: task.parentTaskId || "",
-    status: task.status || "Active",
+    parentTaskId: String(task.parentTaskId || "").trim(),
+    status: String(task.status || "Active").trim() || "Active",
     appliesToAllLocations,
     locations: appliesToAllLocations ? [] : [...new Set(locations)],
-    dateTrackingMode: task.dateTrackingMode || "every",
+    dateTrackingMode: String(task.dateTrackingMode || "every").trim(),
     dateEveryValue: String(task.dateEveryValue || "").trim(),
-    dateEveryUnit: task.dateEveryUnit || "Days",
-    dateOnValue: task.dateOnValue || "",
+    dateEveryUnit: String(task.dateEveryUnit || "Days").trim() || "Days",
+    dateOnValue: String(task.dateOnValue || "").trim(),
     dateNoticeValue: String(task.dateNoticeValue || "").trim() || "7",
-    milesTrackingMode: task.milesTrackingMode || "every",
+    milesTrackingMode: String(task.milesTrackingMode || "every").trim(),
     milesEveryValue: String(task.milesEveryValue || "").trim(),
     milesAtValue: String(task.milesAtValue || "").trim(),
     milesNoticeValue: String(task.milesNoticeValue || "").trim() || "0",
-    linkedTaskId: task.linkedTaskId || ""
+    linkedTaskId: String(task.linkedTaskId || "").trim(),
+    serviceCategory: String(task.serviceCategory || "").trim(),
+    equipmentType: String(task.equipmentType || "").trim(),
+    businessCategory: String(task.businessCategory || "").trim()
   };
 }
 
@@ -158,8 +163,8 @@ function normalizeServiceTemplate(template = {}) {
   return {
     id: template.id || makeServiceTemplateId(),
     name: String(template.name || "").trim(),
-    primaryMeter: template.primaryMeter || "Miles",
-    secondaryMeter: template.secondaryMeter || "None",
+    primaryMeter: String(template.primaryMeter || "Miles").trim() || "Miles",
+    secondaryMeter: String(template.secondaryMeter || "None").trim() || "None",
     locations: Array.isArray(template.locations)
       ? template.locations.map(value => String(value || "").trim()).filter(Boolean)
       : [],
@@ -215,6 +220,159 @@ function getAllTemplates() {
     : [];
 }
 
+/* -------------------------
+   IN-APP MODAL
+------------------------- */
+function ensureTemplateModal() {
+  let modal = document.getElementById("templateAppModal");
+  if (modal) return modal;
+
+  modal = document.createElement("div");
+  modal.id = "templateAppModal";
+  modal.style.cssText = `
+    display:none;
+    position:fixed;
+    inset:0;
+    z-index:7000;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+    background:rgba(20,27,38,0.45);
+  `;
+
+  modal.innerHTML = `
+    <div
+      style="
+        width:min(460px,100%);
+        max-height:calc(100vh - 40px);
+        overflow:auto;
+        background:#fff;
+        border:1px solid #d9e2ec;
+        border-radius:14px;
+        box-shadow:0 20px 50px rgba(16,24,40,0.22);
+      "
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="templateAppModalTitle"
+    >
+      <div
+        style="
+          display:flex;
+          align-items:center;
+          justify-content:space-between;
+          gap:10px;
+          padding:14px 16px;
+          border-bottom:1px solid #d9e2ec;
+          background:#f8fafc;
+        "
+      >
+        <h3 id="templateAppModalTitle" style="margin:0;">Message</h3>
+        <button id="templateAppModalCloseBtn" type="button">✕</button>
+      </div>
+      <div style="padding:16px;">
+        <p id="templateAppModalMessage" style="margin:0 0 12px;"></p>
+        <div id="templateAppModalActions" style="display:flex; gap:8px; flex-wrap:wrap; justify-content:flex-end;"></div>
+      </div>
+    </div>
+  `;
+
+  document.body.appendChild(modal);
+  return modal;
+}
+
+function resolveTemplateModal(result) {
+  const modal = document.getElementById("templateAppModal");
+  const actions = document.getElementById("templateAppModalActions");
+
+  if (modal) modal.style.display = "none";
+  if (actions) actions.innerHTML = "";
+
+  if (templateModalLastFocus && typeof templateModalLastFocus.focus === "function") {
+    try {
+      templateModalLastFocus.focus();
+    } catch (error) {
+      console.warn("Could not restore focus:", error);
+    }
+  }
+
+  const resolver = templateModalResolver;
+  templateModalResolver = null;
+  templateModalLastFocus = null;
+
+  if (typeof resolver === "function") {
+    resolver(result);
+  }
+}
+
+function showTemplateModal({
+  title = "Message",
+  message = "",
+  confirmText = "OK",
+  cancelText = "",
+  danger = false
+} = {}) {
+  const modal = ensureTemplateModal();
+  const titleEl = document.getElementById("templateAppModalTitle");
+  const messageEl = document.getElementById("templateAppModalMessage");
+  const actionsEl = document.getElementById("templateAppModalActions");
+  const closeBtn = document.getElementById("templateAppModalCloseBtn");
+
+  return new Promise(resolve => {
+    templateModalResolver = resolve;
+    templateModalLastFocus = document.activeElement;
+
+    titleEl.textContent = title;
+    messageEl.textContent = message;
+
+    actionsEl.innerHTML = `
+      ${cancelText ? `<button type="button" id="templateAppModalCancelBtn">${cancelText}</button>` : ""}
+      <button type="button" id="templateAppModalConfirmBtn" ${danger ? 'class="danger"' : ""}>${confirmText}</button>
+    `;
+
+    document
+      .getElementById("templateAppModalCancelBtn")
+      ?.addEventListener("click", () => resolveTemplateModal(false), { once: true });
+
+    document
+      .getElementById("templateAppModalConfirmBtn")
+      ?.addEventListener("click", () => resolveTemplateModal(true), { once: true });
+
+    closeBtn?.addEventListener("click", () => resolveTemplateModal(false), {
+      once: true
+    });
+
+    modal.onclick = event => {
+      if (event.target === modal) {
+        resolveTemplateModal(false);
+      }
+    };
+
+    modal.style.display = "flex";
+    document.getElementById("templateAppModalConfirmBtn")?.focus();
+  });
+}
+
+function showTemplateAlert(message, title = "Message") {
+  return showTemplateModal({
+    title,
+    message,
+    confirmText: "OK"
+  });
+}
+
+function showTemplateConfirm(message, title = "Confirm", confirmText = "Delete") {
+  return showTemplateModal({
+    title,
+    message,
+    confirmText,
+    cancelText: "Cancel",
+    danger: true
+  });
+}
+
+/* -------------------------
+   VIEW STATE
+------------------------- */
 function showListView() {
   dom.templateListView?.classList.add("active");
   dom.templateEditorView?.classList.remove("active");
@@ -324,6 +482,9 @@ function formatTaskLocations(task) {
   return "-";
 }
 
+/* -------------------------
+   RENDER LIST / TABLES
+------------------------- */
 function renderTemplateList() {
   if (!dom.templateListTableBody) return;
 
@@ -434,23 +595,47 @@ function renderTasksTable() {
   });
 }
 
+function normalizeEquipmentType(type) {
+  const value = normalizeLower(type);
+
+  if (value === "truck") return "Truck";
+  if (value === "trailer") return "Trailer";
+  if (value === "chassis") return "Chassis";
+  if (value === "o/o" || value === "oo" || value === "owner operator") return "O/O";
+
+  return normalizeText(type);
+}
+
+function taskMatchesEquipment(task, item) {
+  const cleanTask = normalizeServiceTask(task);
+  const equipmentLocation = normalizeLower(item.location || "");
+  const equipmentType = normalizeEquipmentType(item.type || "");
+  const equipmentBusiness = normalizeLower(item.business || "");
+
+  const locationMatch =
+    cleanTask.appliesToAllLocations ||
+    !cleanTask.locations.length ||
+    cleanTask.locations.some(location => normalizeLower(location) === equipmentLocation);
+
+  const typeMatch =
+    !cleanTask.equipmentType ||
+    normalizeEquipmentType(cleanTask.equipmentType) === equipmentType;
+
+  const businessMatch =
+    !cleanTask.businessCategory ||
+    normalizeLower(cleanTask.businessCategory) === equipmentBusiness;
+
+  return locationMatch && typeMatch && businessMatch;
+}
+
 function renderAssignedEquipment() {
   if (!dom.templateAssignedEquipment || !currentTemplate) return;
 
   const equipment = getSafeEquipment();
 
-  const matchedEquipment = equipment.filter(item => {
-    const equipmentLocation = normalizeLower(item.location || "");
-
-    if (currentTemplate.tasks.some(task => normalizeServiceTask(task).appliesToAllLocations)) {
-      return true;
-    }
-
-    return currentTemplate.tasks.some(task => {
-      const cleanTask = normalizeServiceTask(task);
-      return cleanTask.locations.some(location => normalizeLower(location) === equipmentLocation);
-    });
-  });
+  const matchedEquipment = equipment.filter(item =>
+    currentTemplate.tasks.some(task => taskMatchesEquipment(task, item))
+  );
 
   if (!matchedEquipment.length) {
     dom.templateAssignedEquipment.innerHTML =
@@ -462,13 +647,16 @@ function renderAssignedEquipment() {
     <div class="templateEquipmentList">
       ${matchedEquipment.map(item => `
         <div class="templateEquipmentItem">
-          <strong>${escapeHtml(item.unit || "Unit")}</strong> — ${escapeHtml(item.type || "Equipment")}${item.location ? ` • ${escapeHtml(item.location)}` : ""}
+          <strong>${escapeHtml(item.unit || "Unit")}</strong> — ${escapeHtml(item.type || "Equipment")}${item.location ? ` • ${escapeHtml(item.location)}` : ""}${item.business ? ` • ${escapeHtml(item.business)}` : ""}
         </div>
       `).join("")}
     </div>
   `;
 }
 
+/* -------------------------
+   TASK CARD HELPERS
+------------------------- */
 function buildTaskOptions(currentTaskId, selectedId = "") {
   if (!currentTemplate) return `<option value="">None</option>`;
 
@@ -491,23 +679,25 @@ function buildLocationChecklist(task) {
     return `<div class="muted">No locations available yet.</div>`;
   }
 
-  return options.map(location => {
-    const safeId = `taskLoc_${task.id}_${location.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
-    const checked = selectedLocations.includes(location) ? "checked" : "";
+  return options
+    .map(location => {
+      const safeId = `taskLoc_${task.id}_${location.toLowerCase().replace(/[^a-z0-9]+/g, "_")}`;
+      const checked = selectedLocations.includes(location) ? "checked" : "";
 
-    return `
-      <label class="taskLocationOption" for="${escapeHtml(safeId)}">
-        <input
-          id="${escapeHtml(safeId)}"
-          type="checkbox"
-          class="inlineTaskLocationCheckbox"
-          data-location-value="${escapeHtml(location)}"
-          ${checked}
-        />
-        <span>${escapeHtml(location)}</span>
-      </label>
-    `;
-  }).join("");
+      return `
+        <label class="taskLocationOption" for="${escapeHtml(safeId)}">
+          <input
+            id="${escapeHtml(safeId)}"
+            type="checkbox"
+            class="inlineTaskLocationCheckbox"
+            data-location-value="${escapeHtml(location)}"
+            ${checked}
+          />
+          <span>${escapeHtml(location)}</span>
+        </label>
+      `;
+    })
+    .join("");
 }
 
 function buildTaskCard(task) {
@@ -536,6 +726,30 @@ function buildTaskCard(task) {
       <select class="inlineTaskField" data-field="status">
         <option value="Active" ${task.status === "Active" ? "selected" : ""}>Active</option>
         <option value="Inactive" ${task.status === "Inactive" ? "selected" : ""}>Inactive</option>
+      </select>
+
+      <label>Service Category</label>
+      <select class="inlineTaskField" data-field="serviceCategory">
+        <option value="">Select category</option>
+        <option value="pm90" ${task.serviceCategory === "pm90" ? "selected" : ""}>90 Day PM</option>
+        <option value="annual" ${task.serviceCategory === "annual" ? "selected" : ""}>Annual Inspection</option>
+        <option value="truck_a" ${task.serviceCategory === "truck_a" ? "selected" : ""}>Truck A Service</option>
+        <option value="truck_b" ${task.serviceCategory === "truck_b" ? "selected" : ""}>Truck B Service</option>
+      </select>
+
+      <label>Equipment Type</label>
+      <select class="inlineTaskField" data-field="equipmentType">
+        <option value="">All Types</option>
+        <option value="Truck" ${task.equipmentType === "Truck" ? "selected" : ""}>Truck</option>
+        <option value="Trailer" ${task.equipmentType === "Trailer" ? "selected" : ""}>Trailer</option>
+        <option value="Chassis" ${task.equipmentType === "Chassis" ? "selected" : ""}>Chassis</option>
+        <option value="O/O" ${task.equipmentType === "O/O" ? "selected" : ""}>O/O</option>
+      </select>
+
+      <label>Business</label>
+      <select class="inlineTaskField" data-field="businessCategory">
+        <option value="">All Business</option>
+        <option value="Dedicated" ${task.businessCategory === "Dedicated" ? "selected" : ""}>Dedicated</option>
       </select>
 
       <label>Parent Task</label>
@@ -646,7 +860,7 @@ function renderTaskCards() {
 
   if (!currentTemplate.tasks.length) {
     dom.templateTaskCards.innerHTML =
-      `<div class="muted">Add a task to configure assigned locations, date tracking, and miles tracking.</div>`;
+      `<div class="muted">Add a task to configure service category, assigned locations, date tracking, and miles tracking.</div>`;
     return;
   }
 
@@ -655,6 +869,9 @@ function renderTaskCards() {
   });
 }
 
+/* -------------------------
+   TASK UPDATE
+------------------------- */
 function updateTaskField(taskId, field, value) {
   if (!currentTemplate) return;
 
@@ -710,9 +927,6 @@ function bindTaskCardEvents(card, taskId) {
   const fields = card.querySelectorAll(".inlineTaskField");
 
   fields.forEach(field => {
-    const tag = field.tagName.toLowerCase();
-    const type = (field.type || "").toLowerCase();
-
     field.addEventListener("input", () => {
       if (field.dataset.field === "task") {
         const title = card.querySelector(".serviceTaskHeader h3");
@@ -722,21 +936,17 @@ function bindTaskCardEvents(card, taskId) {
       }
     });
 
-    const handler = () => {
+    field.addEventListener("change", () => {
       updateTaskField(taskId, field.dataset.field, field.value);
 
       if (
-        tag === "select" ||
+        field.tagName.toLowerCase() === "select" ||
         field.dataset.field === "parentTaskId" ||
         field.dataset.field === "linkedTaskId"
       ) {
         renderTaskCards();
       }
-    };
-
-    if (type === "text" || type === "number" || type === "date" || tag === "select") {
-      field.addEventListener("change", handler);
-    }
+    });
   });
 
   const modeButtons = card.querySelectorAll(".serviceModeBtn");
@@ -801,12 +1011,17 @@ function deleteTask(taskId) {
   renderAssignedEquipment();
 }
 
+/* -------------------------
+   SAVE / RENDER
+------------------------- */
 async function saveTemplate() {
   if (!currentTemplate) return;
 
   currentTemplate.name = normalizeText(dom.templateName?.value) || "Untitled Template";
   currentTemplate.primaryMeter = dom.templatePrimaryMeter?.value || "Miles";
   currentTemplate.secondaryMeter = dom.templateSecondaryMeter?.value || "None";
+  currentTemplate.tasks = currentTemplate.tasks.map(normalizeServiceTask);
+
   syncTemplateLocationsFromTasks();
 
   const settings = getSafeSettings();
@@ -826,8 +1041,16 @@ async function saveTemplate() {
   });
 
   await refreshSettingsCache();
+
+  try {
+    window.opener?.dispatchEvent(new CustomEvent("fleet:settings-changed"));
+  } catch (error) {
+    console.warn("Unable to notify opener after saving template:", error);
+  }
+
   renderTemplateList();
   showListView();
+  await showTemplateAlert("Service template saved.", "Saved");
 }
 
 function renderTemplate() {
@@ -861,6 +1084,9 @@ function renderTemplate() {
   document.getElementById("detailsTab")?.classList.add("active");
 }
 
+/* -------------------------
+   EVENTS
+------------------------- */
 function bindEvents() {
   dom.createTemplateBtn?.addEventListener("click", () => {
     createNewTemplate();
@@ -874,7 +1100,7 @@ function bindEvents() {
     }
   });
 
-  dom.templateListTableBody?.addEventListener("click", event => {
+  dom.templateListTableBody?.addEventListener("click", async event => {
     const btn = event.target.closest("[data-action]");
     if (!btn) return;
 
@@ -887,9 +1113,14 @@ function bindEvents() {
     }
 
     if (action === "delete-template") {
-      const confirmed = window.confirm("Delete this template?");
+      const confirmed = await showTemplateConfirm(
+        "Delete this template?",
+        "Delete Template",
+        "Delete"
+      );
+
       if (confirmed) {
-        deleteTemplate(templateId);
+        await deleteTemplate(templateId);
       }
     }
   });
@@ -906,7 +1137,7 @@ function bindEvents() {
     showListView();
   });
 
-  dom.templateTasksTableBody?.addEventListener("click", event => {
+  dom.templateTasksTableBody?.addEventListener("click", async event => {
     const btn = event.target.closest("[data-action]");
     if (!btn) return;
 
@@ -921,14 +1152,19 @@ function bindEvents() {
     }
 
     if (action === "delete-task") {
-      const confirmed = window.confirm("Delete this task?");
+      const confirmed = await showTemplateConfirm(
+        "Delete this task?",
+        "Delete Task",
+        "Delete"
+      );
+
       if (confirmed) {
         deleteTask(taskId);
       }
     }
   });
 
-  dom.templateTaskCards?.addEventListener("click", event => {
+  dom.templateTaskCards?.addEventListener("click", async event => {
     const btn = event.target.closest("[data-action]");
     if (!btn) return;
 
@@ -945,7 +1181,12 @@ function bindEvents() {
     }
 
     if (action === "delete-task") {
-      const confirmed = window.confirm("Delete this task?");
+      const confirmed = await showTemplateConfirm(
+        "Delete this task?",
+        "Delete Task",
+        "Delete"
+      );
+
       if (confirmed) {
         deleteTask(taskId);
       }
@@ -969,8 +1210,17 @@ function bindEvents() {
       document.getElementById(targetId)?.classList.add("active");
     });
   });
+
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape" && document.getElementById("templateAppModal")?.style.display === "flex") {
+      resolveTemplateModal(false);
+    }
+  });
 }
 
+/* -------------------------
+   INIT
+------------------------- */
 async function init() {
   cacheDom();
   bindEvents();

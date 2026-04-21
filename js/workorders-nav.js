@@ -1,6 +1,5 @@
-import { getDom } from "./dom.js";
-import { normalizeCellValue } from "./utils.js";
 import {
+  getLoggedInUser,
   loadWorkOrders,
   saveWorkOrders
 } from "./storage.js";
@@ -15,368 +14,787 @@ import {
   isRowSelected
 } from "./gridShared.js";
 
-const WO_STORAGE_KEYS = {
-  columns: "fleetWOColumns",
-  gridState: "fleetWOGridState"
-};
+function byId(id) {
+  return document.getElementById(id);
+}
 
-function safeParse(value, fallback) {
+function qs(selector, root = document) {
+  return root.querySelector(selector);
+}
+
+function qsa(selector, root = document) {
+  return Array.from(root.querySelectorAll(selector));
+}
+
+function normalizeText(value) {
+  return String(value ?? "").trim();
+}
+
+function normalizeLower(value) {
+  return normalizeText(value).toLowerCase();
+}
+
+function normalizeCellValue(value) {
+  if (value == null) return "";
+  return String(value).trim();
+}
+
+function escapeHtml(value) {
+  return String(value ?? "")
+    .replaceAll("&", "&amp;")
+    .replaceAll("<", "&lt;")
+    .replaceAll(">", "&gt;")
+    .replaceAll('"', "&quot;")
+    .replaceAll("'", "&#39;");
+}
+
+function formatMoney(value) {
+  const amount = Number(value || 0) || 0;
+  return `$${amount.toFixed(2)}`;
+}
+
+function canEditWorkOrders() {
+  const user = getLoggedInUser();
+  const permissions =
+    user &&
+    typeof user === "object" &&
+    user.permissions &&
+    typeof user.permissions === "object"
+      ? user.permissions
+      : {};
+
+  return !!permissions.workOrdersEdit;
+}
+
+function canDeleteWorkOrders() {
+  const user = getLoggedInUser();
+  const permissions =
+    user &&
+    typeof user === "object" &&
+    user.permissions &&
+    typeof user.permissions === "object"
+      ? user.permissions
+      : {};
+
+  return !!permissions.workOrdersDelete;
+}
+
+const WORK_ORDER_COLUMNS_KEY = "fleetWorkOrderColumns";
+const WORK_ORDER_GRID_STATE_KEY = "fleetWorkOrderGridState";
+
+const DEFAULT_WORK_ORDER_COLUMNS = [
+  { key: "workOrderNumber", label: "WO #", visible: true, sortable: true, filterType: "text" },
+  { key: "equipmentNumber", label: "Equipment", visible: true, sortable: true, filterType: "text" },
+  { key: "status", label: "Status", visible: true, sortable: true, filterType: "select" },
+  { key: "assignee", label: "Assignee", visible: true, sortable: true, filterType: "text" },
+  { key: "type", label: "Type", visible: true, sortable: true, filterType: "select" },
+  { key: "opened", label: "Opened", visible: true, sortable: true, filterType: "text" },
+  { key: "totalDisplay", label: "Total", visible: true, sortable: true, filterType: "text" }
+];
+
+function loadWorkOrderColumns() {
   try {
-    if (value == null || value === "") return fallback;
-    const parsed = JSON.parse(value);
-    return parsed ?? fallback;
-  } catch {
-    return fallback;
+    const parsed = JSON.parse(localStorage.getItem(WORK_ORDER_COLUMNS_KEY) || "[]");
+    if (Array.isArray(parsed) && parsed.length) {
+      return parsed.map(col => ({
+        sortable: true,
+        filterType: "text",
+        visible: true,
+        ...col
+      }));
+    }
+  } catch (error) {
+    console.warn("Failed to load work order columns:", error);
   }
+
+  return DEFAULT_WORK_ORDER_COLUMNS.map(col => ({ ...col }));
 }
 
-function loadWOColumnsLocal(defaultColumns = []) {
-  const saved = safeParse(localStorage.getItem(WO_STORAGE_KEYS.columns), defaultColumns);
-  return Array.isArray(saved) ? saved : defaultColumns;
-}
-
-function loadWOGridStateLocal(defaultState = {}) {
-  const saved = safeParse(localStorage.getItem(WO_STORAGE_KEYS.gridState), defaultState);
-  return saved && typeof saved === "object" && !Array.isArray(saved)
-    ? saved
-    : defaultState;
-}
-
-function saveWOGridSettingsLocal(columns, state) {
+function saveWorkOrderColumns(columns) {
   localStorage.setItem(
-    WO_STORAGE_KEYS.columns,
-    JSON.stringify(Array.isArray(columns) ? columns : [])
-  );
-
-  localStorage.setItem(
-    WO_STORAGE_KEYS.gridState,
-    JSON.stringify(
-      state && typeof state === "object" && !Array.isArray(state) ? state : {}
-    )
+    WORK_ORDER_COLUMNS_KEY,
+    JSON.stringify(Array.isArray(columns) ? columns : DEFAULT_WORK_ORDER_COLUMNS)
   );
 }
 
-export async function initWorkOrdersNav() {
-  const dom = getDom();
+function loadWorkOrderGridState() {
+  try {
+    const parsed = JSON.parse(localStorage.getItem(WORK_ORDER_GRID_STATE_KEY) || "{}");
+    return parsed && typeof parsed === "object" && !Array.isArray(parsed)
+      ? parsed
+      : {};
+  } catch (error) {
+    console.warn("Failed to load work order grid state:", error);
+    return {};
+  }
+}
 
-  const DEFAULT_WO_COLUMNS = [
-    { key: "workOrderNumber", label: "WO #", visible: true, sortable: true, filterType: "text", custom: false },
-    { key: "equipmentNumber", label: "Equipment", visible: true, sortable: true, filterType: "text", custom: false },
-    { key: "status", label: "Status", visible: true, sortable: true, filterType: "select", custom: false },
-    { key: "woType", label: "Type", visible: true, sortable: true, filterType: "text", custom: false },
-    { key: "date", label: "Opened", visible: true, sortable: true, filterType: "text", custom: false },
-    { key: "assignee", label: "Assignee", visible: false, sortable: true, filterType: "text", custom: false },
-    { key: "meter", label: "Meter", visible: false, sortable: true, filterType: "text", custom: false },
-    { key: "grandTotal", label: "Total", visible: true, sortable: true, filterType: "text", custom: false }
-  ];
+function saveWorkOrderGridState(state) {
+  localStorage.setItem(
+    WORK_ORDER_GRID_STATE_KEY,
+    JSON.stringify(state && typeof state === "object" ? state : {})
+  );
+}
 
-  let workOrders = [];
-  let selectedWorkOrderIds = new Set();
-  let workOrdersSelectionMode = false;
-  let woFilterUiMode = "header";
+let isOpeningWorkOrder = false;
+let workOrders = [];
+let workOrderColumns = loadWorkOrderColumns();
+let workOrderGridState = {
+  globalSearch: "",
+  filters: {},
+  sortKey: "",
+  sortDirection: "asc",
+  headerMenuOpenFor: null,
+  ...loadWorkOrderGridState()
+};
+let workOrderSelectionMode = false;
+let selectedWorkOrderIds = new Set();
+let workOrdersOptionsBound = false;
+let workOrdersDeleteBound = false;
+let workOrdersSearchBound = false;
+let workOrdersColumnManagerBound = false;
 
-  let woColumns = loadWOColumnsLocal(DEFAULT_WO_COLUMNS);
+let appModalResolver = null;
+let appModalLastFocus = null;
 
-  let woGridState = loadWOGridStateLocal({
-    sortKey: "date",
-    sortDirection: "desc",
-    globalSearch: "",
-    filters: {},
-    headerMenuOpenFor: null
-  });
+function showAppConfirm({
+  title = "Confirm",
+  message = "Are you sure?",
+  confirmText = "OK",
+  cancelText = "Cancel",
+  danger = false
+} = {}) {
+  const modal = byId("appModal");
+  const titleEl = byId("appModalTitle");
+  const messageEl = byId("appModalMessage");
+  const confirmBtn = byId("appModalConfirmBtn");
+  const cancelBtn = byId("appModalCancelBtn");
+  const closeBtn = byId("appModalCloseBtn");
 
-  async function hydrateWorkOrders() {
-    try {
-      const loaded = await loadWorkOrders();
-      workOrders = Array.isArray(loaded) ? loaded : [];
-    } catch (error) {
-      console.error("Failed to load work orders:", error);
-      workOrders = [];
-    }
+  if (!modal || !titleEl || !messageEl || !confirmBtn || !cancelBtn || !closeBtn) {
+    return Promise.resolve(window.confirm(message));
   }
 
-  async function persistWorkOrders() {
-    await saveWorkOrders(workOrders);
+  if (appModalResolver) {
+    appModalResolver(false);
+    appModalResolver = null;
   }
 
-  function persistGrid() {
-    saveWOGridSettingsLocal(woColumns, woGridState);
-  }
+  appModalLastFocus = document.activeElement;
 
-  function normalizeWorkOrderRecord(wo) {
-    return {
-      ...wo,
-      id: wo?.id ?? "",
-      workOrderNumber: wo?.workOrderNumber || wo?.woNumber || "",
-      equipmentNumber: wo?.equipmentNumber || "",
-      status: wo?.status || "",
-      woType: wo?.woType || wo?.repair || "",
-      date: wo?.date || wo?.opened || "",
-      assignee: wo?.assignee || "",
-      meter: wo?.meter || wo?.mileage || "",
-      grandTotal: Number(wo?.grandTotal ?? wo?.total ?? 0)
-    };
-  }
+  titleEl.textContent = title;
+  messageEl.textContent = message;
+  confirmBtn.textContent = confirmText;
+  cancelBtn.textContent = cancelText;
+  cancelBtn.style.display = "";
+  confirmBtn.classList.toggle("danger", !!danger);
 
-  function getNormalizedWorkOrders() {
-    return workOrders.map(normalizeWorkOrderRecord);
-  }
+  modal.classList.add("show");
 
-  function getFilteredNormalizedWorkOrders() {
-    return getFilteredGridData(getNormalizedWorkOrders(), woColumns, woGridState);
-  }
+  return new Promise(resolve => {
+    let settled = false;
 
-  function refreshWorkOrdersSelectionUi() {
-    updateSelectionButtonText({
-      selectionMode: workOrdersSelectionMode,
-      selectedSet: selectedWorkOrderIds,
-      actionButton: dom.deleteSelectedWOBtn,
-      defaultText: "Delete Selected",
-      confirmText: "Confirm Delete",
-      cancelButton: dom.cancelWOSelectionBtn,
-      table: dom.workOrdersTable
-    });
-  }
+    const finish = result => {
+      if (settled) return;
+      settled = true;
 
-  function enterWorkOrdersSelectionMode() {
-    workOrdersSelectionMode = true;
-    refreshWorkOrdersSelectionUi();
-    renderWorkOrdersNavTable();
-  }
+      modal.classList.remove("show");
+      confirmBtn.classList.remove("danger");
 
-  function exitWorkOrdersSelectionMode(clear = true) {
-    workOrdersSelectionMode = false;
-    if (clear) clearSelections(selectedWorkOrderIds);
-    refreshWorkOrdersSelectionUi();
-    renderWorkOrdersNavTable();
-  }
+      closeBtn.removeEventListener("click", onCancel);
+      cancelBtn.removeEventListener("click", onCancel);
+      confirmBtn.removeEventListener("click", onConfirm);
+      modal.removeEventListener("click", onBackdrop);
+      document.removeEventListener("keydown", onKeyDown);
 
-  function openWorkOrderFormWindow(workOrderId = null) {
-    const url = workOrderId != null
-      ? `workorder.html?id=${workOrderId}`
-      : "workorder.html";
+      appModalResolver = null;
 
-    window.open(url, "WorkOrderWindow", "width=1200,height=900");
-  }
-
-  async function deleteSelectedWorkOrders() {
-    if (!workOrdersSelectionMode) {
-      enterWorkOrdersSelectionMode();
-      return;
-    }
-
-    if (selectedWorkOrderIds.size === 0) {
-      alert("Select work orders to delete.");
-      return;
-    }
-
-    const confirmed = confirm(
-      `Delete ${selectedWorkOrderIds.size} selected work order(s)?`
-    );
-    if (!confirmed) return;
-
-    workOrders = workOrders.filter(
-      wo => !selectedWorkOrderIds.has(String(wo.id))
-    );
-
-    await persistWorkOrders();
-    exitWorkOrdersSelectionMode(true);
-  }
-
-  function clearWOFilters() {
-    woGridState.globalSearch = "";
-    woGridState.filters = {};
-    woGridState.headerMenuOpenFor = null;
-
-    if (dom.woGlobalSearch) {
-      dom.woGlobalSearch.value = "";
-    }
-
-    clearSelections(selectedWorkOrderIds);
-    persistGrid();
-    renderWorkOrdersNavTable();
-  }
-
-  function ensureValidColumns() {
-    if (!Array.isArray(woColumns) || !woColumns.length || !woColumns.some(col => col.visible)) {
-      woColumns = DEFAULT_WO_COLUMNS.map(col => ({ ...col }));
-      persistGrid();
-    }
-  }
-
-  function renderEmptyRow(message) {
-    const row = document.createElement("tr");
-    const td = document.createElement("td");
-    td.className = "emptyCell";
-    td.colSpan = woColumns.filter(col => col.visible).length + 1;
-    td.textContent = message;
-    row.appendChild(td);
-    dom.workOrdersTableBody.appendChild(row);
-  }
-
-  function renderWorkOrdersNavTable() {
-    if (!dom.workOrdersTable || !dom.workOrdersTableHeaderRow || !dom.workOrdersTableBody) {
-      console.warn("Work Orders grid DOM missing", {
-        table: !!dom.workOrdersTable,
-        headerRow: !!dom.workOrdersTableHeaderRow,
-        body: !!dom.workOrdersTableBody
-      });
-      return;
-    }
-
-    ensureValidColumns();
-
-    const normalizedData = getNormalizedWorkOrders();
-    const normalizedRows = getFilteredGridData(normalizedData, woColumns, woGridState);
-
-    buildColumnFiltersGeneric({
-      container: dom.woColumnFilters,
-      columns: woColumns,
-      data: normalizedData,
-      gridState: woGridState,
-      filterUiMode: woFilterUiMode,
-      saveFn: persistGrid,
-      renderFn: renderWorkOrdersNavTable
-    });
-
-    renderGridHeaderGeneric({
-      headerRow: dom.workOrdersTableHeaderRow,
-      table: dom.workOrdersTable,
-      columns: woColumns,
-      data: normalizedData,
-      gridState: woGridState,
-      filterUiMode: woFilterUiMode,
-      saveFn: persistGrid,
-      renderFn: renderWorkOrdersNavTable,
-      selectedSet: selectedWorkOrderIds,
-      visibleRows: normalizedRows,
-      selectAllCheckboxId: "selectAllWorkOrdersCheckbox",
-      rowIdAttribute: "workOrderId"
-    });
-
-    dom.workOrdersTableBody.innerHTML = "";
-
-    if (!normalizedRows.length) {
-      renderEmptyRow("No work orders found");
-      setGridResultCount(dom.woResultCount, normalizedRows);
-      refreshWorkOrdersSelectionUi();
-      return;
-    }
-
-    normalizedRows.forEach(wo => {
-      const row = document.createElement("tr");
-      row.dataset.workOrderId = wo.id;
-
-      const selectTd = document.createElement("td");
-      selectTd.className = "selectColumnCell";
-
-      const checkbox = document.createElement("input");
-      checkbox.type = "checkbox";
-      checkbox.className = "gridRowCheckbox";
-      checkbox.checked = isRowSelected(selectedWorkOrderIds, wo.id);
-
-      checkbox.addEventListener("click", event => event.stopPropagation());
-      checkbox.addEventListener("change", () => {
-        toggleRowSelection(selectedWorkOrderIds, wo.id);
-        refreshWorkOrdersSelectionUi();
-      });
-
-      selectTd.appendChild(checkbox);
-      row.appendChild(selectTd);
-
-      woColumns
-        .filter(col => col.visible)
-        .forEach(col => {
-          const td = document.createElement("td");
-          td.textContent = col.key === "grandTotal"
-            ? `$${Number(wo[col.key] || 0).toFixed(2)}`
-            : normalizeCellValue(wo[col.key]);
-
-          row.appendChild(td);
-        });
-
-      row.addEventListener("click", () => {
-        if (workOrdersSelectionMode) {
-          toggleRowSelection(selectedWorkOrderIds, wo.id);
-          renderWorkOrdersNavTable();
-        } else {
-          openWorkOrderFormWindow(wo.id);
-        }
-      });
-
-      if (isRowSelected(selectedWorkOrderIds, wo.id)) {
-        row.classList.add("selectedRow");
+      if (appModalLastFocus && typeof appModalLastFocus.focus === "function") {
+        appModalLastFocus.focus();
       }
 
-      dom.workOrdersTableBody.appendChild(row);
-    });
+      resolve(result);
+    };
 
-    setGridResultCount(dom.woResultCount, normalizedRows);
-    refreshWorkOrdersSelectionUi();
-  }
+    const onConfirm = () => finish(true);
+    const onCancel = () => finish(false);
+    const onBackdrop = event => {
+      if (event.target === modal) {
+        finish(false);
+      }
+    };
+    const onKeyDown = event => {
+      if (!modal.classList.contains("show")) return;
 
-  function bindEvents() {
-    if (dom.openQuickWOFormBtn) {
-      dom.openQuickWOFormBtn.addEventListener("click", () => {
-        openWorkOrderFormWindow();
-      });
-    }
+      if (event.key === "Escape") {
+        event.preventDefault();
+        finish(false);
+      }
 
-    if (dom.deleteSelectedWOBtn) {
-      dom.deleteSelectedWOBtn.addEventListener("click", deleteSelectedWorkOrders);
-    }
+      if (event.key === "Enter") {
+        event.preventDefault();
+        finish(true);
+      }
+    };
 
-    if (dom.cancelWOSelectionBtn) {
-      dom.cancelWOSelectionBtn.addEventListener("click", () => {
-        exitWorkOrdersSelectionMode(true);
-      });
-    }
+    appModalResolver = finish;
 
-    if (dom.woGlobalSearch) {
-      dom.woGlobalSearch.value = woGridState.globalSearch || "";
-      dom.woGlobalSearch.addEventListener("input", () => {
-        woGridState.globalSearch = dom.woGlobalSearch.value || "";
-        persistGrid();
-        renderWorkOrdersNavTable();
-      });
-    }
+    closeBtn.addEventListener("click", onCancel);
+    cancelBtn.addEventListener("click", onCancel);
+    confirmBtn.addEventListener("click", onConfirm);
+    modal.addEventListener("click", onBackdrop);
+    document.addEventListener("keydown", onKeyDown);
 
-    if (dom.clearWOFiltersBtn) {
-      dom.clearWOFiltersBtn.addEventListener("click", clearWOFilters);
-    }
-
-    if (dom.workOrdersOptionsBtn && dom.workOrdersOptionsDropdown) {
-      dom.workOrdersOptionsBtn.addEventListener("click", event => {
-        event.stopPropagation();
-        dom.workOrdersOptionsDropdown.classList.toggle("show");
-      });
-
-      document.addEventListener("click", event => {
-        if (
-          dom.workOrdersOptionsDropdown &&
-          dom.workOrdersOptionsBtn &&
-          !dom.workOrdersOptionsDropdown.contains(event.target) &&
-          !dom.workOrdersOptionsBtn.contains(event.target)
-        ) {
-          dom.workOrdersOptionsDropdown.classList.remove("show");
-        }
-      });
-    }
-  }
-
-  console.log("initWorkOrdersNav running", {
-    table: !!dom.workOrdersTable,
-    headerRow: !!dom.workOrdersTableHeaderRow,
-    body: !!dom.workOrdersTableBody,
-    columnsLoaded: woColumns
+    confirmBtn.focus();
   });
+}
 
-  bindEvents();
-  await hydrateWorkOrders();
-  renderWorkOrdersNavTable();
+function getColumnByKey(key) {
+  return workOrderColumns.find(col => col.key === key) || null;
+}
+
+function getVisibleWorkOrderColumns() {
+  return workOrderColumns.filter(col => col.visible);
+}
+
+function persistWorkOrderGridSettings() {
+  saveWorkOrderColumns(workOrderColumns);
+  saveWorkOrderGridState(workOrderGridState);
+}
+
+function openWorkOrderWindow(id = "") {
+  if (isOpeningWorkOrder) return;
+  isOpeningWorkOrder = true;
+
+  const fileName = "workorder.html";
+  const url = id
+    ? `${fileName}?id=${encodeURIComponent(id)}`
+    : fileName;
+
+  const features = "width=1400,height=900,resizable=yes,scrollbars=yes";
+
+  try {
+    if (window.electronAPI?.openWindow) {
+      window.electronAPI.openWindow({
+        url,
+        title: id ? `Work Order ${id}` : "Work Order",
+        width: 1400,
+        height: 900
+      });
+      return;
+    }
+
+    window.open(url, "_blank", features);
+  } catch (error) {
+    console.warn("openWorkOrderWindow failed", error);
+    window.open(url, "_blank", features);
+  } finally {
+    setTimeout(() => {
+      isOpeningWorkOrder = false;
+    }, 500);
+  }
+}
+
+function normalizeWorkOrderRow(item = {}) {
+  const total = Number(item.total ?? item.grandTotal ?? item.totalCharges ?? 0) || 0;
 
   return {
+    ...item,
+    id: String(item.id ?? ""),
+    workOrderNumber: item.workOrderNumber || item.woNumber || "",
+    equipmentNumber: item.equipmentNumber || "",
+    status: item.status || "",
+    assignee: item.assignee || "",
+    type: item.woType || item.type || "",
+    opened: item.opened || item.date || item.woDate || "",
+    total,
+    totalDisplay: total.toFixed(2)
+  };
+}
+
+function getFilteredWorkOrders() {
+  const searchValue = byId("woGlobalSearch")?.value || "";
+  workOrderGridState.globalSearch = searchValue;
+
+  return getFilteredGridData(workOrders, workOrderColumns, workOrderGridState);
+}
+
+function updateWorkOrderSelectionUi(visibleRows = []) {
+  updateSelectionButtonText({
+    selectionMode: workOrderSelectionMode,
+    selectedSet: selectedWorkOrderIds,
+    actionButton: byId("deleteSelectedWOBtn"),
+    defaultText: "Delete Selected",
+    confirmText: "Delete Selected",
+    cancelButton: byId("cancelWOSelectionBtn"),
+    table: byId("workOrdersTable")
+  });
+
+  const deleteBtn = byId("deleteSelectedWOBtn");
+  if (deleteBtn) {
+    deleteBtn.disabled =
+      !canDeleteWorkOrders() ||
+      (workOrderSelectionMode && selectedWorkOrderIds.size === 0);
+  }
+
+  const visibleIds = new Set(visibleRows.map(row => String(row.id)));
+  selectedWorkOrderIds.forEach(id => {
+    if (!workOrders.some(row => String(row.id) === String(id))) {
+      selectedWorkOrderIds.delete(id);
+    }
+  });
+
+  qsa("#workOrdersTable tbody tr[data-work-order-id]").forEach(row => {
+    const id = String(row.dataset.workOrderId || "");
+    row.classList.toggle("selectedRow", selectedWorkOrderIds.has(id));
+    const checkbox = qs(".gridRowCheckbox", row);
+    if (checkbox) {
+      checkbox.checked = selectedWorkOrderIds.has(id);
+    }
+  });
+
+  const selectAllCheckbox = byId("workOrdersSelectAll");
+  if (selectAllCheckbox) {
+    const selectedVisibleCount = visibleRows.filter(row =>
+      selectedWorkOrderIds.has(String(row.id))
+    ).length;
+
+    selectAllCheckbox.checked =
+      visibleRows.length > 0 && selectedVisibleCount === visibleRows.length;
+
+    selectAllCheckbox.indeterminate =
+      selectedVisibleCount > 0 && selectedVisibleCount < visibleRows.length;
+  }
+}
+
+function clearWorkOrderFilters() {
+  workOrderGridState.globalSearch = "";
+  workOrderGridState.filters = {};
+  workOrderGridState.sortKey = "";
+  workOrderGridState.sortDirection = "asc";
+  workOrderGridState.headerMenuOpenFor = null;
+
+  const searchInput = byId("woGlobalSearch");
+  if (searchInput) {
+    searchInput.value = "";
+  }
+
+  persistWorkOrderGridSettings();
+  renderWorkOrdersNavTable();
+}
+
+function toggleWorkOrdersOptionsDropdown(forceOpen = null) {
+  const button = byId("workOrdersOptionsBtn");
+  const dropdown = byId("workOrdersOptionsDropdown");
+  if (!button || !dropdown) return;
+
+  const shouldOpen =
+    typeof forceOpen === "boolean"
+      ? forceOpen
+      : !dropdown.classList.contains("show");
+
+  dropdown.classList.toggle("show", shouldOpen);
+  button.classList.toggle("active", shouldOpen);
+  button.setAttribute("aria-expanded", shouldOpen ? "true" : "false");
+}
+
+function openWorkOrderColumnManager() {
+  const panel = byId("columnManagerPanel");
+  const title = qs("#columnManagerPanel .columnManagerHeader h3");
+  const list = byId("columnManagerList");
+  const newInput = byId("newCustomColumnInput");
+  const addBtn = byId("addCustomColumnBtn");
+
+  if (!panel || !list) return;
+
+  if (title) {
+    title.textContent = "Manage Work Order Columns";
+  }
+
+  list.innerHTML = "";
+
+  workOrderColumns.forEach((column, index) => {
+    const row = document.createElement("div");
+    row.className = "columnManagerRow";
+
+    const left = document.createElement("div");
+    left.className = "columnManagerRowLeft";
+
+    const checkbox = document.createElement("input");
+    checkbox.type = "checkbox";
+    checkbox.checked = !!column.visible;
+    checkbox.addEventListener("change", () => {
+      workOrderColumns[index].visible = checkbox.checked;
+      persistWorkOrderGridSettings();
+      renderWorkOrdersNavTable();
+      openWorkOrderColumnManager();
+    });
+
+    const label = document.createElement("span");
+    label.textContent = column.label;
+
+    left.appendChild(checkbox);
+    left.appendChild(label);
+
+    row.appendChild(left);
+    list.appendChild(row);
+  });
+
+  if (newInput) {
+    newInput.value = "";
+    newInput.placeholder = "New custom column";
+  }
+
+  if (addBtn) {
+    addBtn.style.display = "none";
+  }
+
+  panel.classList.add("show");
+}
+
+function closeWorkOrderColumnManager() {
+  byId("columnManagerPanel")?.classList.remove("show");
+}
+
+function bindWorkOrderColumnManagerEvents() {
+  if (workOrdersColumnManagerBound) return;
+  workOrdersColumnManagerBound = true;
+
+  byId("closeColumnManagerBtn")?.addEventListener("click", () => {
+    closeWorkOrderColumnManager();
+  });
+
+  byId("columnManagerPanel")?.addEventListener("click", event => {
+    if (event.target === byId("columnManagerPanel")) {
+      closeWorkOrderColumnManager();
+    }
+  });
+}
+
+function renderWorkOrdersNavTable() {
+  const table = byId("workOrdersTable");
+  const tableBody = table?.querySelector("tbody");
+  const headerRow = byId("workOrdersTableHeaderRow");
+  const resultCount = byId("woResultCount");
+  const filtersHost = byId("woColumnFilters");
+
+  if (!table || !tableBody || !headerRow) return;
+
+  const visibleRows = getFilteredWorkOrders();
+
+  renderGridHeaderGeneric({
+    headerRow,
+    table,
+    columns: workOrderColumns,
+    data: workOrders,
+    gridState: workOrderGridState,
+    filterUiMode: "row",
+    saveFn: persistWorkOrderGridSettings,
+    renderFn: renderWorkOrdersNavTable,
+    selectedSet: selectedWorkOrderIds,
+    visibleRows,
+    selectAllCheckboxId: "workOrdersSelectAll",
+    rowIdAttribute: "workOrderId",
+    sortable: true,
+    selectionMode: true,
+    columnFiltersHost: filtersHost,
+    resultCountEl: resultCount,
+    buildColumnFiltersFn: buildColumnFiltersGeneric
+  });
+
+  const visibleColumns = getVisibleWorkOrderColumns();
+
+  if (!visibleRows.length) {
+    const colSpan = visibleColumns.length + 1;
+    tableBody.innerHTML = `
+      <tr>
+        <td colspan="${colSpan}" class="emptyCell">No work orders found</td>
+      </tr>
+    `;
+    updateWorkOrderSelectionUi([]);
+    setGridResultCount(resultCount, 0);
+    return;
+  }
+
+  tableBody.innerHTML = visibleRows
+    .map(item => {
+      const rowId = String(item.id || "");
+      const selectedClass = isRowSelected(selectedWorkOrderIds, rowId)
+        ? " selectedRow"
+        : "";
+
+      const cells = visibleColumns
+        .map(col => {
+          let value = item[col.key];
+
+          if (col.key === "totalDisplay") {
+            value = formatMoney(item.total);
+          }
+
+          return `<td>${escapeHtml(value ?? "")}</td>`;
+        })
+        .join("");
+
+      return `
+        <tr data-work-order-id="${escapeHtml(rowId)}" class="workOrderNavRow${selectedClass}">
+          <td class="selectColumnCell">
+            <input
+              type="checkbox"
+              class="gridRowCheckbox"
+              data-row-id="${escapeHtml(rowId)}"
+              ${isRowSelected(selectedWorkOrderIds, rowId) ? "checked" : ""}
+            />
+          </td>
+          ${cells}
+        </tr>
+      `;
+    })
+    .join("");
+
+  tableBody.querySelectorAll("tr[data-work-order-id]").forEach(row => {
+    row.addEventListener("click", event => {
+      if (event.target.closest(".gridRowCheckbox")) {
+        return;
+      }
+
+      const rowId = String(row.dataset.workOrderId || "");
+      if (!rowId) return;
+
+      if (workOrderSelectionMode) {
+        toggleRowSelection(selectedWorkOrderIds, rowId);
+        workOrderSelectionMode = selectedWorkOrderIds.size > 0;
+        updateWorkOrderSelectionUi(getFilteredWorkOrders());
+        return;
+      }
+
+      openWorkOrderWindow(rowId);
+    });
+  });
+
+  tableBody.querySelectorAll(".gridRowCheckbox").forEach(checkbox => {
+    checkbox.addEventListener("change", event => {
+      event.stopPropagation();
+
+      const rowId = String(checkbox.dataset.rowId || "");
+      if (!rowId) return;
+
+      if (checkbox.checked) {
+        selectedWorkOrderIds.add(rowId);
+      } else {
+        selectedWorkOrderIds.delete(rowId);
+      }
+
+      workOrderSelectionMode = selectedWorkOrderIds.size > 0;
+      updateWorkOrderSelectionUi(getFilteredWorkOrders());
+    });
+
+    checkbox.addEventListener("click", event => {
+      event.stopPropagation();
+    });
+  });
+
+  updateWorkOrderSelectionUi(visibleRows);
+  setGridResultCount(resultCount, visibleRows);
+}
+
+async function deleteSelectedWorkOrders() {
+  if (!canDeleteWorkOrders()) return;
+  if (!selectedWorkOrderIds.size) return;
+
+  const idsToDelete = new Set(Array.from(selectedWorkOrderIds).map(String));
+  const nextWorkOrders = workOrders.filter(item => !idsToDelete.has(String(item.id)));
+
+  await saveWorkOrders(nextWorkOrders);
+  workOrders = nextWorkOrders;
+
+  clearSelections(selectedWorkOrderIds);
+  workOrderSelectionMode = false;
+  renderWorkOrdersNavTable();
+
+  try {
+    window.dispatchEvent(new CustomEvent("fleet:work-orders-changed"));
+  } catch (error) {
+    console.warn("Unable to dispatch work orders changed event:", error);
+  }
+}
+
+function applyWorkOrderPermissionUi() {
+  const canEdit = canEditWorkOrders();
+  const canDelete = canDeleteWorkOrders();
+
+  const openBtn = byId("openQuickWOFormBtn");
+  const deleteBtn = byId("deleteSelectedWOBtn");
+  const optionsBtn = byId("workOrdersOptionsBtn");
+
+  if (openBtn) {
+    openBtn.style.display = canEdit ? "" : "none";
+  }
+
+  if (deleteBtn) {
+    deleteBtn.style.display = canDelete ? "" : "none";
+  }
+
+  if (optionsBtn) {
+    optionsBtn.style.display = "";
+  }
+
+  updateWorkOrderSelectionUi(getFilteredWorkOrders());
+}
+
+function bindDeleteSelectedButton() {
+  if (workOrdersDeleteBound) return;
+  workOrdersDeleteBound = true;
+
+  const deleteBtn = byId("deleteSelectedWOBtn");
+  const cancelBtn = byId("cancelWOSelectionBtn");
+
+  deleteBtn?.addEventListener("click", async () => {
+    console.log("Delete Selected clicked", {
+      canDelete: canDeleteWorkOrders(),
+      workOrderSelectionMode,
+      selectedCount: selectedWorkOrderIds.size,
+      selectedIds: Array.from(selectedWorkOrderIds)
+    });
+
+    if (!canDeleteWorkOrders()) return;
+
+    if (!workOrderSelectionMode) {
+      console.log("Entering selection mode");
+      workOrderSelectionMode = true;
+      clearSelections(selectedWorkOrderIds);
+      renderWorkOrdersNavTable();
+      return;
+    }
+
+    if (!selectedWorkOrderIds.size) {
+      console.log("No selected work orders");
+      return;
+    }
+
+    console.log("Opening app modal confirm");
+
+    const confirmed = await showAppConfirm({
+      title: "Delete Work Orders",
+      message: `Delete ${selectedWorkOrderIds.size} selected work order${selectedWorkOrderIds.size === 1 ? "" : "s"}?`,
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      danger: true
+    });
+
+    console.log("Modal result:", confirmed);
+
+    if (!confirmed) return;
+
+    await deleteSelectedWorkOrders();
+  });
+
+  cancelBtn?.addEventListener("click", () => {
+    workOrderSelectionMode = false;
+    clearSelections(selectedWorkOrderIds);
+    renderWorkOrdersNavTable();
+  });
+}
+
+function bindWorkOrdersOptionsMenu() {
+  if (workOrdersOptionsBound) return;
+  workOrdersOptionsBound = true;
+
+  const optionsBtn = byId("workOrdersOptionsBtn");
+  const dropdown = byId("workOrdersOptionsDropdown");
+  const manageColumnsBtn = byId("manageWOColumnsBtn");
+  const clearFiltersBtn = byId("clearWOFiltersBtn");
+
+  optionsBtn?.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleWorkOrdersOptionsDropdown();
+  });
+
+  manageColumnsBtn?.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleWorkOrdersOptionsDropdown(false);
+    openWorkOrderColumnManager();
+  });
+
+  clearFiltersBtn?.addEventListener("click", event => {
+    event.preventDefault();
+    event.stopPropagation();
+    toggleWorkOrdersOptionsDropdown(false);
+    clearWorkOrderFilters();
+  });
+
+  document.addEventListener("click", event => {
+    if (!dropdown || !optionsBtn) return;
+
+    const insideDropdown = dropdown.contains(event.target);
+    const onButton = optionsBtn.contains(event.target);
+
+    if (!insideDropdown && !onButton) {
+      toggleWorkOrdersOptionsDropdown(false);
+    }
+  });
+
+  document.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      toggleWorkOrdersOptionsDropdown(false);
+      closeWorkOrderColumnManager();
+    }
+  });
+}
+
+function bindSearchInput() {
+  if (workOrdersSearchBound) return;
+  workOrdersSearchBound = true;
+
+  const searchInput = byId("woGlobalSearch");
+  if (!searchInput) return;
+
+  searchInput.value = workOrderGridState.globalSearch || "";
+  searchInput.addEventListener("input", () => {
+    workOrderGridState.globalSearch = searchInput.value || "";
+    persistWorkOrderGridSettings();
+    renderWorkOrdersNavTable();
+  });
+}
+
+async function refreshWorkOrders() {
+  const rows = await loadWorkOrders();
+  workOrders = Array.isArray(rows) ? rows.map(normalizeWorkOrderRow) : [];
+  renderWorkOrdersNavTable();
+}
+
+export function initWorkOrdersNav() {
+  const openBtn = byId("openQuickWOFormBtn");
+
+  openBtn?.addEventListener("click", () => {
+    openWorkOrderWindow();
+  });
+
+  bindSearchInput();
+  bindWorkOrdersOptionsMenu();
+  bindDeleteSelectedButton();
+  bindWorkOrderColumnManagerEvents();
+
+  window.addEventListener("fleet:work-orders-changed", async () => {
+    await refreshWorkOrders();
+  });
+
+  applyWorkOrderPermissionUi();
+
+  refreshWorkOrders().catch(error => {
+    console.error("Failed to initialize work orders nav:", error);
+    renderWorkOrdersNavTable();
+  });
+
+  return {
+    openWorkOrderWindow,
+    applyWorkOrderPermissionUi,
     renderWorkOrdersNavTable,
-    openWorkOrderFormWindow
+    clearWorkOrderSelection() {
+      workOrderSelectionMode = false;
+      clearSelections(selectedWorkOrderIds);
+      renderWorkOrdersNavTable();
+    }
   };
 }

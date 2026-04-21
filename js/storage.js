@@ -1,4 +1,8 @@
 import { initFirebase } from "../firebase-config.js";
+import {
+  ensureEquipmentServiceHistory,
+  normalizeServiceHistoryMap
+} from "./service-tracking.js";
 
 const KEYS = {
   fleetUser: "fleetUser",
@@ -106,6 +110,10 @@ function safeParse(value, fallback) {
   }
 }
 
+function safeArray(value) {
+  return Array.isArray(value) ? value : [];
+}
+
 function getArray(key) {
   const value = safeParse(localStorage.getItem(key), []);
   return Array.isArray(value) ? value : [];
@@ -119,7 +127,9 @@ function getObject(key, fallback = {}) {
   const value = safeParse(localStorage.getItem(key), fallback);
   return value && typeof value === "object" && !Array.isArray(value)
     ? value
-    : { ...fallback };
+    : fallback == null
+      ? fallback
+      : { ...fallback };
 }
 
 function setObject(key, value, fallback = {}) {
@@ -133,6 +143,15 @@ function setObject(key, value, fallback = {}) {
 
 function normalizeString(value, fallback = "") {
   return String(value ?? fallback).trim();
+}
+
+function normalizeNumber(value, fallback = 0) {
+  const num = Number(value);
+  return Number.isFinite(num) ? num : fallback;
+}
+
+function normalizeBoolean(value, fallback = false) {
+  return typeof value === "boolean" ? value : fallback;
 }
 
 function firstNonEmptyArray(keys = []) {
@@ -175,6 +194,37 @@ function normalizeId(value, fallbackPrefix = "id") {
   return `${fallbackPrefix}_${Date.now()}_${Math.floor(Math.random() * 100000)}`;
 }
 
+function normalizeIsoDate(value) {
+  return normalizeString(value);
+}
+
+function normalizeTimestampish(value) {
+  if (value == null) return "";
+  if (typeof value === "string") return value.trim();
+  if (typeof value === "number") return new Date(value).toISOString();
+  if (value instanceof Date) return value.toISOString();
+
+  if (typeof value === "object") {
+    if (typeof value.toDate === "function") {
+      try {
+        return value.toDate().toISOString();
+      } catch {
+        return "";
+      }
+    }
+
+    if (typeof value.seconds === "number") {
+      try {
+        return new Date(value.seconds * 1000).toISOString();
+      } catch {
+        return "";
+      }
+    }
+  }
+
+  return "";
+}
+
 /* -------------------------
    SETTINGS NORMALIZATION
 ------------------------- */
@@ -210,7 +260,10 @@ function normalizeServiceTask(task = {}) {
     milesTrackingMode: normalizeString(task.milesTrackingMode, "every") || "every",
     milesEveryValue: normalizeString(task.milesEveryValue),
     milesAtValue: normalizeString(task.milesAtValue),
-    milesNoticeValue: normalizeString(task.milesNoticeValue, "0") || "0"
+    milesNoticeValue: normalizeString(task.milesNoticeValue, "0") || "0",
+    serviceCategory: normalizeString(task.serviceCategory).toLowerCase(),
+    equipmentType: normalizeString(task.equipmentType),
+    businessCategory: normalizeString(task.businessCategory)
   };
 }
 
@@ -259,6 +312,7 @@ function getDefaultSettings() {
     companyName: "",
     defaultLocation: "",
     theme: "default",
+    weatherZip: "62201",
     serviceTasks: [],
     serviceTemplates: []
   };
@@ -282,8 +336,413 @@ function normalizeSettings(settings = {}) {
     companyName: normalizeString(settings?.companyName),
     defaultLocation: normalizeString(settings?.defaultLocation),
     theme: normalizeString(settings?.theme, "default") || "default",
+    weatherZip: normalizeString(settings?.weatherZip || "62201") || "62201",
     serviceTemplates,
     serviceTasks
+  };
+}
+
+/* -------------------------
+   EQUIPMENT / WORK ORDER NORMALIZATION
+------------------------- */
+function normalizeEquipmentRecord(eq = {}, settings = {}) {
+  const normalized = {
+    ...eq,
+    id: normalizeId(eq?.id, "equipment"),
+    unit: normalizeString(eq?.unit),
+    type: normalizeString(eq?.type),
+    year: normalizeString(eq?.year),
+    vin: normalizeString(eq?.vin),
+    plate: normalizeString(eq?.plate),
+    state: normalizeString(eq?.state),
+    status: normalizeString(eq?.status),
+    location: normalizeString(eq?.location),
+    pm: normalizeString(eq?.pm),
+    business: normalizeString(eq?.business),
+    rim: normalizeString(eq?.rim),
+    size: normalizeString(eq?.size),
+    pressure: normalizeString(eq?.pressure),
+    manufacturer: normalizeString(eq?.manufacturer),
+    bodyClass: normalizeString(eq?.bodyClass),
+    driveType: normalizeString(eq?.driveType),
+    fuelType: normalizeString(eq?.fuelType),
+    engine: normalizeString(eq?.engine),
+    serviceTracking:
+      eq?.serviceTracking && typeof eq.serviceTracking === "object" && !Array.isArray(eq.serviceTracking)
+        ? eq.serviceTracking
+        : {}
+  };
+
+  return {
+    ...normalized,
+    serviceHistory: ensureEquipmentServiceHistory(normalized, settings)
+  };
+}
+
+function normalizeWorkOrderRecord(wo = {}) {
+  const normalizedAssignees =
+    Array.isArray(wo?.assignees) && wo.assignees.length
+      ? wo.assignees
+          .map(value => normalizeString(value))
+          .filter(Boolean)
+      : normalizeString(wo?.assignee)
+        ? String(wo.assignee)
+            .split(",")
+            .map(value => normalizeString(value))
+            .filter(Boolean)
+        : [];
+
+  return {
+    ...wo,
+    id: normalizeId(wo?.id, "workOrder"),
+    workOrderNumber: normalizeString(wo?.workOrderNumber || wo?.woNumber),
+    woNumber: normalizeString(wo?.woNumber || wo?.workOrderNumber),
+    equipmentNumber: normalizeString(wo?.equipmentNumber),
+    equipmentId: normalizeString(wo?.equipmentId),
+    assignee: normalizedAssignees.join(", "),
+    assignees: normalizedAssignees,
+    started: normalizeString(wo?.started),
+    type: normalizeString(wo?.type),
+    repairLocation: normalizeString(wo?.repairLocation),
+    meter: normalizeString(wo?.meter || wo?.mileage),
+    mileage: normalizeString(wo?.mileage || wo?.meter),
+    opened: normalizeString(wo?.opened || wo?.date || wo?.woDate),
+    date: normalizeString(wo?.date || wo?.opened || wo?.woDate),
+    woDate: normalizeString(wo?.woDate || wo?.opened || wo?.date),
+    closed: normalizeString(wo?.closed),
+    completed: normalizeString(wo?.completed),
+    status: normalizeString(wo?.status, "Open") || "Open",
+    notes: normalizeString(wo?.notes),
+    serviceCode: normalizeString(wo?.serviceCode),
+    serviceLabel: normalizeString(wo?.serviceLabel),
+    serviceCodes: Array.isArray(wo?.serviceCodes)
+      ? wo.serviceCodes.map(value => normalizeString(value)).filter(Boolean)
+      : normalizeString(wo?.serviceCode)
+        ? [normalizeString(wo.serviceCode)]
+        : [],
+    serviceLabels: Array.isArray(wo?.serviceLabels)
+      ? wo.serviceLabels.map(value => normalizeString(value)).filter(Boolean)
+      : normalizeString(wo?.serviceLabel)
+        ? [normalizeString(wo.serviceLabel)]
+        : [],
+    serviceCategory: normalizeString(wo?.serviceCategory).toLowerCase(),
+    serviceTemplateId: normalizeString(wo?.serviceTemplateId),
+    serviceTemplateName: normalizeString(wo?.serviceTemplateName),
+    sourceTaskId: normalizeString(wo?.sourceTaskId),
+    sourceTaskName: normalizeString(wo?.sourceTaskName),
+    tasks: Array.isArray(wo?.tasks) ? wo.tasks : [],
+    attachments: Array.isArray(wo?.attachments) ? wo.attachments : [],
+    inventoryIssueAppliedKeys: Array.isArray(wo?.inventoryIssueAppliedKeys)
+      ? wo.inventoryIssueAppliedKeys.map(value => normalizeString(value)).filter(Boolean)
+      : [],
+    totalLabor: Number(wo?.totalLabor || 0) || 0,
+    totalParts: Number(wo?.totalParts || 0) || 0,
+    total: Number(wo?.total || wo?.totalCost || 0) || 0,
+    createdAt: normalizeString(wo?.createdAt),
+    updatedAt: normalizeString(wo?.updatedAt)
+  };
+}
+
+function normalizePlainListRecord(record = {}, fallbackPrefix = "item") {
+  return {
+    ...record,
+    id: normalizeId(record?.id, fallbackPrefix)
+  };
+}
+
+/* -------------------------
+   INVENTORY NORMALIZATION
+------------------------- */
+function normalizeInventoryHistoryEntry(entry = {}, type = "") {
+  return {
+    id: normalizeId(entry?.id, `inventoryHistory_${type || "entry"}`),
+    type: normalizeString(entry?.type || type),
+    date: normalizeTimestampish(entry?.date || entry?.createdAt || entry?.timestamp),
+    quantity: normalizeNumber(entry?.quantity, 0),
+    previousQuantity: normalizeNumber(entry?.previousQuantity, 0),
+    newQuantity: normalizeNumber(entry?.newQuantity, 0),
+    unitCost: normalizeNumber(entry?.unitCost, 0),
+    referenceNumber: normalizeString(entry?.referenceNumber),
+    referenceId: normalizeString(entry?.referenceId),
+    referenceType: normalizeString(entry?.referenceType),
+    vendor: normalizeString(entry?.vendor),
+    user: normalizeString(entry?.user),
+    notes: normalizeString(entry?.notes),
+    source: normalizeString(entry?.source)
+  };
+}
+
+function normalizeInventoryRecord(item = {}) {
+  const purchaseHistory = Array.isArray(item?.purchaseHistory)
+    ? item.purchaseHistory.map(entry => normalizeInventoryHistoryEntry(entry, "purchase"))
+    : [];
+
+  const issueHistory = Array.isArray(item?.issueHistory)
+    ? item.issueHistory.map(entry => normalizeInventoryHistoryEntry(entry, "issue"))
+    : [];
+
+  const qtyAdjustmentHistory = Array.isArray(item?.qtyAdjustmentHistory)
+    ? item.qtyAdjustmentHistory.map(entry => normalizeInventoryHistoryEntry(entry, "adjustment"))
+    : [];
+
+  const lastPurchasedAt =
+    normalizeTimestampish(item?.lastPurchasedAt) ||
+    purchaseHistory
+      .map(entry => entry.date)
+      .filter(Boolean)
+      .sort()
+      .slice(-1)[0] ||
+    "";
+
+  const lastIssuedAt =
+    normalizeTimestampish(item?.lastIssuedAt) ||
+    issueHistory
+      .map(entry => entry.date)
+      .filter(Boolean)
+      .sort()
+      .slice(-1)[0] ||
+    "";
+
+  return {
+    ...item,
+    id: normalizeId(item?.id, "inventory"),
+    name: normalizeString(item?.name || item?.itemName),
+    itemName: normalizeString(item?.itemName || item?.name),
+    partNumber: normalizeString(item?.partNumber),
+    category: normalizeString(item?.category),
+    quantity: normalizeNumber(item?.quantity, 0),
+    unitCost: normalizeNumber(item?.unitCost, 0),
+    location: normalizeString(item?.location),
+    vendor: normalizeString(item?.vendor),
+    notes: normalizeString(item?.notes),
+
+    reorderPoint: normalizeNumber(item?.reorderPoint, 0),
+    reorderQuantity: normalizeNumber(item?.reorderQuantity, 0),
+    maximumQuantity: normalizeNumber(item?.maximumQuantity, 0),
+
+    minimumQuantity: normalizeNumber(
+      item?.minimumQuantity,
+      normalizeNumber(item?.reorderPoint, 0)
+    ),
+
+    quickAdjustEnabled: normalizeBoolean(item?.quickAdjustEnabled, true),
+
+    profileNotes: normalizeString(item?.profileNotes || item?.notes),
+    binLocation: normalizeString(item?.binLocation),
+    manufacturer: normalizeString(item?.manufacturer),
+    partType: normalizeString(item?.partType),
+    uom: normalizeString(item?.uom || "EA"),
+
+    lastPurchasedAt,
+    lastIssuedAt,
+    lastPurchasedCost: normalizeNumber(item?.lastPurchasedCost, 0),
+
+    purchaseHistory,
+    issueHistory,
+    qtyAdjustmentHistory,
+
+    createdAt: normalizeTimestampish(item?.createdAt),
+    updatedAt: normalizeTimestampish(item?.updatedAt)
+  };
+}
+
+/* -------------------------
+   USER / PERMISSION NORMALIZATION
+------------------------- */
+function getDefaultPermissions() {
+  return {
+    dashboardView: true,
+    settingsAccess: false,
+    userManagement: false,
+
+    equipmentView: true,
+    equipmentEdit: false,
+    equipmentDelete: false,
+    deletedEquipmentAccess: false,
+
+    workOrdersView: true,
+    workOrdersEdit: false,
+    workOrdersDelete: false,
+
+    inventoryView: true,
+    inventoryEdit: false,
+    inventoryDelete: false,
+    vendorsAccess: false,
+    purchaseOrdersAccess: false
+  };
+}
+
+function normalizeRole(role) {
+  const clean = normalizeString(role, "user").toLowerCase();
+  if (clean === "admin") return "admin";
+  if (clean === "manager") return "manager";
+  return "user";
+}
+
+function getPermissionsForRole(role = "user") {
+  const cleanRole = normalizeRole(role);
+
+  if (cleanRole === "admin") {
+    return {
+      dashboardView: true,
+      settingsAccess: true,
+      userManagement: true,
+
+      equipmentView: true,
+      equipmentEdit: true,
+      equipmentDelete: true,
+      deletedEquipmentAccess: true,
+
+      workOrdersView: true,
+      workOrdersEdit: true,
+      workOrdersDelete: true,
+
+      inventoryView: true,
+      inventoryEdit: true,
+      inventoryDelete: true,
+      vendorsAccess: true,
+      purchaseOrdersAccess: true
+    };
+  }
+
+  if (cleanRole === "manager") {
+    return {
+      dashboardView: true,
+      settingsAccess: true,
+      userManagement: false,
+
+      equipmentView: true,
+      equipmentEdit: true,
+      equipmentDelete: true,
+      deletedEquipmentAccess: true,
+
+      workOrdersView: true,
+      workOrdersEdit: true,
+      workOrdersDelete: true,
+
+      inventoryView: true,
+      inventoryEdit: true,
+      inventoryDelete: true,
+      vendorsAccess: true,
+      purchaseOrdersAccess: true
+    };
+  }
+
+  return {
+    dashboardView: true,
+    settingsAccess: false,
+    userManagement: false,
+
+    equipmentView: true,
+    equipmentEdit: true,
+    equipmentDelete: false,
+    deletedEquipmentAccess: false,
+
+    workOrdersView: true,
+    workOrdersEdit: true,
+    workOrdersDelete: false,
+
+    inventoryView: true,
+    inventoryEdit: true,
+    inventoryDelete: false,
+    vendorsAccess: true,
+    purchaseOrdersAccess: true
+  };
+}
+
+function normalizePermissions(permissions = {}, role = "user") {
+  const cleanRole = normalizeRole(role);
+
+  if (cleanRole === "admin") {
+    return getPermissionsForRole("admin");
+  }
+
+  return {
+    ...getDefaultPermissions(),
+    ...getPermissionsForRole(cleanRole),
+    ...(permissions && typeof permissions === "object" && !Array.isArray(permissions)
+      ? permissions
+      : {})
+  };
+}
+
+function normalizeUserRecord(user = {}) {
+  const username = normalizeString(user?.username).trim();
+  const password = normalizeString(user?.password);
+  const role = normalizeRole(user?.role);
+  const active = user?.active !== false;
+  const firstName = normalizeString(user?.firstName);
+  const lastName = normalizeString(user?.lastName);
+  const permissions = normalizePermissions(user?.permissions, role);
+
+  return {
+    id: normalizeString(user?.id, username) || username,
+    username,
+    password,
+    role,
+    firstName,
+    lastName,
+    active,
+    permissions
+  };
+}
+
+function isValidUserRecord(user) {
+  return !!user?.username && !!user?.password;
+}
+
+function normalizeLoggedInUserValue(value) {
+  if (!value) {
+    return {
+      username: "",
+      firstName: "",
+      lastName: "",
+      role: "",
+      permissions: getDefaultPermissions()
+    };
+  }
+
+  if (typeof value === "string") {
+    const raw = value.trim();
+
+    if (!raw) {
+      return {
+        username: "",
+        firstName: "",
+        lastName: "",
+        role: "",
+        permissions: getDefaultPermissions()
+      };
+    }
+
+    try {
+      const parsed = JSON.parse(raw);
+      if (parsed && typeof parsed === "object") {
+        return {
+          username: normalizeString(parsed.username),
+          firstName: normalizeString(parsed.firstName),
+          lastName: normalizeString(parsed.lastName),
+          role: normalizeRole(parsed.role),
+          permissions: normalizePermissions(parsed.permissions, parsed.role)
+        };
+      }
+    } catch {
+      return {
+        username: raw,
+        firstName: "",
+        lastName: "",
+        role: "",
+        permissions: getDefaultPermissions()
+      };
+    }
+  }
+
+  return {
+    username: normalizeString(value?.username),
+    firstName: normalizeString(value?.firstName),
+    lastName: normalizeString(value?.lastName),
+    role: normalizeRole(value?.role),
+    permissions: normalizePermissions(value?.permissions, value?.role)
   };
 }
 
@@ -311,13 +770,7 @@ async function syncCollection(collectionName, items = []) {
     throw new Error(`Firestore unavailable while syncing "${collectionName}".`);
   }
 
-  const {
-    collection,
-    getDocs,
-    doc,
-    writeBatch,
-    serverTimestamp
-  } = ctx.fns;
+  const { collection, getDocs, doc, writeBatch, serverTimestamp } = ctx.fns;
 
   const safeItems = Array.isArray(items) ? items : [];
   const normalizedItems = safeItems.map((item, index) => {
@@ -330,7 +783,6 @@ async function syncCollection(collectionName, items = []) {
 
   const incomingIds = new Set(normalizedItems.map(item => String(item.id)));
   const existingSnapshot = await getDocs(collection(ctx.db, collectionName));
-
   const batch = writeBatch(ctx.db);
 
   existingSnapshot.forEach(existingDoc => {
@@ -395,226 +847,172 @@ async function writeSettingsDoc(settings) {
 /* -------------------------
    USER LOGIN STORAGE
 ------------------------- */
-function normalizeUserRecord(user = {}) {
-  const username = normalizeString(user?.username).trim();
-  const password = normalizeString(user?.password);
-  const role = normalizeString(user?.role, "user") || "user";
-  const active = user?.active !== false;
-
-  return {
-    id: normalizeString(user?.id, username) || username,
-    username,
-    password,
-    role: role === "admin" ? "admin" : "user",
-    active
-  };
-}
-
-function isValidUserRecord(user) {
-  return !!user?.username && !!user?.password;
-}
-
-async function readUsersCollection() {
-  const ctx = await getFirestoreContext();
-
-  if (!ctx.connected || !ctx.db || !ctx.fns) {
-    throw new Error("Firestore unavailable while loading users.");
-  }
-
-  const { collection, getDocs } = ctx.fns;
-  const snap = await getDocs(collection(ctx.db, COLLECTIONS.users));
-
-  return snap.docs
-    .map(docSnap => normalizeUserRecord({ id: docSnap.id, ...docSnap.data() }))
-    .filter(isValidUserRecord)
-    .sort((a, b) => a.username.localeCompare(b.username));
-}
-
-async function writeUsersCollection(users) {
-  const ctx = await getFirestoreContext();
-
-  if (!ctx.connected || !ctx.db || !ctx.fns) {
-    throw new Error("Firestore unavailable while saving users.");
-  }
-
-  const { collection, getDocs, doc, writeBatch, serverTimestamp } = ctx.fns;
-  const cleanUsers = Array.isArray(users)
-    ? users.map(normalizeUserRecord).filter(isValidUserRecord)
-    : [];
-
-  const usersRef = collection(ctx.db, COLLECTIONS.users);
-  const existingSnap = await getDocs(usersRef);
-  const batch = writeBatch(ctx.db);
-
-  const nextIds = new Set(cleanUsers.map(user => String(user.id)));
-
-  existingSnap.forEach(docSnap => {
-    if (!nextIds.has(String(docSnap.id))) {
-      batch.delete(docSnap.ref);
-    }
-  });
-
-  cleanUsers.forEach(user => {
-    const userRef = doc(ctx.db, COLLECTIONS.users, String(user.id));
-    batch.set(
-      userRef,
-      {
-        username: user.username,
-        password: user.password,
-        role: user.role,
-        active: user.active,
-        updatedAt: serverTimestamp()
-      },
-      { merge: true }
-    );
-  });
-
-  await batch.commit();
-  return cleanUsers;
-}
-
-export async function ensureDefaultUser() {
-  try {
-    const users = await readUsersCollection();
-
-    if (users.length) {
-      localStorage.setItem(KEYS.fleetUsersCache, JSON.stringify(users));
-      return users;
-    }
-
-    const legacyUser = getObject(KEYS.fleetUser, null);
-    const migratedUser = normalizeUserRecord({
-      username: legacyUser?.username || "admin",
-      password: legacyUser?.password || "admin",
-      role: "admin",
-      active: true
-    });
-
-    const seeded = await writeUsersCollection([migratedUser]);
-
-    setObject(KEYS.fleetUser, migratedUser, {
-      username: "admin",
-      password: "admin"
-    });
-    localStorage.setItem(KEYS.fleetUsersCache, JSON.stringify(seeded));
-
-    return seeded;
-  } catch (error) {
-    console.error("ensureDefaultUser failed, using local fallback:", error);
-
-    const cachedUsers = getArray(KEYS.fleetUsersCache)
-      .map(normalizeUserRecord)
-      .filter(isValidUserRecord);
-
-    if (cachedUsers.length) {
-      return cachedUsers;
-    }
-
-    const fallback = normalizeUserRecord({
-      username: "admin",
-      password: "admin",
-      role: "admin",
-      active: true
-    });
-
-    setObject(KEYS.fleetUser, fallback, {
-      username: "admin",
-      password: "admin"
-    });
-    setArray(KEYS.fleetUsersCache, [fallback]);
-
-    return [fallback];
-  }
-}
-
 export async function loadUsers() {
   try {
-    const users = await readUsersCollection();
-    setArray(KEYS.fleetUsersCache, users);
-    return users;
+    const users = await readCollection(COLLECTIONS.users);
+    const normalized = users.map(normalizeUserRecord).filter(isValidUserRecord);
+    setArray(KEYS.fleetUsersCache, normalized);
+    return normalized;
   } catch (error) {
-    console.error("loadUsers failed, falling back to cache:", error);
-    return getArray(KEYS.fleetUsersCache)
-      .map(normalizeUserRecord)
-      .filter(isValidUserRecord);
+    console.error("loadUsers failed, falling back to localStorage:", error);
+    return getArray(KEYS.fleetUsersCache).map(normalizeUserRecord).filter(isValidUserRecord);
   }
 }
 
 export async function saveUsers(users) {
-  const cleanUsers = Array.isArray(users)
-    ? users.map(normalizeUserRecord).filter(isValidUserRecord)
-    : [];
-
-  const adminCount = cleanUsers.filter(
-    user => user.role === "admin" && user.active
-  ).length;
-
-  if (adminCount === 0) {
-    throw new Error("At least one active admin user is required.");
-  }
+  const normalized = safeArray(users)
+    .map(normalizeUserRecord)
+    .filter(isValidUserRecord);
 
   try {
-    const saved = await writeUsersCollection(cleanUsers);
-    setArray(KEYS.fleetUsersCache, saved);
-    return saved;
+    const synced = await syncCollection(COLLECTIONS.users, normalized);
+    setArray(KEYS.fleetUsersCache, synced);
+    return synced;
   } catch (error) {
-    console.error("saveUsers failed, caching locally:", error);
-    setArray(KEYS.fleetUsersCache, cleanUsers);
-    return cleanUsers;
+    console.error("saveUsers failed, saving to localStorage fallback:", error);
+    setArray(KEYS.fleetUsersCache, normalized);
+    return normalized;
   }
 }
 
-export async function validateUserCredentials(username, password) {
-  const cleanUsername = normalizeString(username).trim();
-  const cleanPassword = normalizeString(password);
-
-  if (!cleanUsername || !cleanPassword) {
-    return null;
-  }
-
+export async function ensureDefaultUser() {
   const users = await loadUsers();
 
-  return (
-    users.find(
-      user =>
-        user.active &&
-        user.username === cleanUsername &&
-        user.password === cleanPassword
-    ) || null
+  if (users.length) {
+    const repaired = users.map(user =>
+      normalizeRole(user.role) === "admin"
+        ? {
+            ...user,
+            active: true,
+            permissions: getPermissionsForRole("admin")
+          }
+        : user
+    );
+
+    return saveUsers(repaired);
+  }
+
+  const defaultAdmin = normalizeUserRecord({
+    id: "admin",
+    username: "admin",
+    password: "admin",
+    role: "admin",
+    firstName: "",
+    lastName: "",
+    active: true,
+    permissions: getPermissionsForRole("admin")
+  });
+
+  return saveUsers([defaultAdmin]);
+}
+
+export async function createUser(user) {
+  const users = await loadUsers();
+  const cleanUser = normalizeUserRecord(user);
+
+  const exists = users.some(
+    existing => normalizeString(existing.username).toLowerCase() === cleanUser.username.toLowerCase()
   );
+
+  if (exists) {
+    throw new Error("A user with that username already exists.");
+  }
+
+  return saveUsers([...users, cleanUser]);
 }
 
-export async function updateUserPassword(username, newPassword) {
-  const cleanUsername = normalizeString(username).trim();
-  const cleanPassword = normalizeString(newPassword);
-
-  if (!cleanUsername || !cleanPassword) {
-    throw new Error("Username and password are required.");
-  }
-
+export async function updateUser(updatedUser) {
   const users = await loadUsers();
-  const targetExists = users.some(user => user.username === cleanUsername);
-
-  if (!targetExists) {
-    throw new Error(`User "${cleanUsername}" was not found.`);
-  }
+  const cleanUser = normalizeUserRecord(updatedUser);
 
   const nextUsers = users.map(user =>
-    user.username === cleanUsername
-      ? { ...user, password: cleanPassword }
+    normalizeString(user.id) === normalizeString(cleanUser.id)
+      ? cleanUser
       : user
   );
 
   return saveUsers(nextUsers);
 }
 
-export function getLoggedInUsername() {
-  return normalizeString(localStorage.getItem(KEYS.fleetLoggedInUser));
+export async function deleteUser(userId) {
+  const users = await loadUsers();
+  const nextUsers = users.filter(user => normalizeString(user.id) !== normalizeString(userId));
+  return saveUsers(nextUsers);
 }
 
-export function setLoggedIn(username = "") {
+export async function updateStoredUserPassword(username, cleanPassword) {
+  const users = await loadUsers();
+
+  const nextUsers = users.map(user =>
+    normalizeString(user.username).toLowerCase() === normalizeString(username).toLowerCase()
+      ? {
+          ...user,
+          password: cleanPassword
+        }
+      : user
+  );
+
+  return saveUsers(nextUsers);
+}
+
+export async function updateUserPassword(username, newPassword) {
+  return updateStoredUserPassword(username, newPassword);
+}
+
+export async function repairAdminPermissions() {
+  const users = await loadUsers();
+
+  const repairedUsers = users.map(user => {
+    if (normalizeRole(user.role) === "admin") {
+      return {
+        ...user,
+        active: true,
+        permissions: getPermissionsForRole("admin")
+      };
+    }
+    return user;
+  });
+
+  return saveUsers(repairedUsers);
+}
+
+export function getLoggedInUser() {
+  return normalizeLoggedInUserValue(localStorage.getItem(KEYS.fleetLoggedInUser));
+}
+
+export function getLoggedInUsername() {
+  const loggedInUser = getLoggedInUser();
+  return normalizeString(loggedInUser.username);
+}
+
+export function setLoggedIn(userOrUsername = "") {
   localStorage.setItem(KEYS.fleetLoggedIn, "true");
-  localStorage.setItem(KEYS.fleetLoggedInUser, normalizeString(username));
+
+  if (typeof userOrUsername === "string") {
+    localStorage.setItem(
+      KEYS.fleetLoggedInUser,
+      JSON.stringify({
+        username: normalizeString(userOrUsername),
+        firstName: "",
+        lastName: "",
+        role: "",
+        permissions: getDefaultPermissions()
+      })
+    );
+    return;
+  }
+
+  const cleanUser = normalizeUserRecord(userOrUsername);
+  localStorage.setItem(
+    KEYS.fleetLoggedInUser,
+    JSON.stringify({
+      username: cleanUser.username,
+      firstName: cleanUser.firstName,
+      lastName: cleanUser.lastName,
+      role: cleanUser.role,
+      permissions: cleanUser.permissions
+    })
+  );
 }
 
 export function isLoggedIn() {
@@ -678,8 +1076,11 @@ export async function saveSettings(settings) {
    EQUIPMENT STORAGE
 ------------------------- */
 export async function loadEquipment() {
+  const settings = await loadSettings();
+
   try {
-    return await readCollection(COLLECTIONS.equipment);
+    const rows = await readCollection(COLLECTIONS.equipment);
+    return rows.map(item => normalizeEquipmentRecord(item, settings));
   } catch (error) {
     console.error("loadEquipment failed, falling back to localStorage:", error);
 
@@ -687,27 +1088,33 @@ export async function loadEquipment() {
       "equipment",
       "fleet_equipment",
       "equipmentList"
-    ]);
+    ]).map(item => normalizeEquipmentRecord(item, settings));
   }
 }
 
 export async function saveEquipment(data) {
+  const settings = await loadSettings();
   const safeData = Array.isArray(data) ? data : [];
+  const normalized = safeData.map(item => normalizeEquipmentRecord(item, settings));
 
   try {
-    const synced = await syncCollection(COLLECTIONS.equipment, safeData);
-    writeArrayWithLegacy(KEYS.fleetEquipment, synced, ["equipment"]);
-    return synced;
+    const synced = await syncCollection(COLLECTIONS.equipment, normalized);
+    const finalSynced = synced.map(item => normalizeEquipmentRecord(item, settings));
+    writeArrayWithLegacy(KEYS.fleetEquipment, finalSynced, ["equipment"]);
+    return finalSynced;
   } catch (error) {
     console.error("saveEquipment failed, saving to localStorage fallback:", error);
-    writeArrayWithLegacy(KEYS.fleetEquipment, safeData, ["equipment"]);
-    return safeData;
+    writeArrayWithLegacy(KEYS.fleetEquipment, normalized, ["equipment"]);
+    return normalized;
   }
 }
 
 export async function loadDeletedEquipment() {
+  const settings = await loadSettings();
+
   try {
-    return await readCollection(COLLECTIONS.deletedEquipment);
+    const rows = await readCollection(COLLECTIONS.deletedEquipment);
+    return rows.map(item => normalizeEquipmentRecord(item, settings));
   } catch (error) {
     console.error("loadDeletedEquipment failed, falling back to localStorage:", error);
 
@@ -715,21 +1122,24 @@ export async function loadDeletedEquipment() {
       "deletedEquipment",
       "fleet_deleted_equipment",
       "deletedEquipmentList"
-    ]);
+    ]).map(item => normalizeEquipmentRecord(item, settings));
   }
 }
 
 export async function saveDeletedEquipment(data) {
+  const settings = await loadSettings();
   const safeData = Array.isArray(data) ? data : [];
+  const normalized = safeData.map(item => normalizeEquipmentRecord(item, settings));
 
   try {
-    const synced = await syncCollection(COLLECTIONS.deletedEquipment, safeData);
-    writeArrayWithLegacy(KEYS.fleetDeletedEquipment, synced, ["deletedEquipment"]);
-    return synced;
+    const synced = await syncCollection(COLLECTIONS.deletedEquipment, normalized);
+    const finalSynced = synced.map(item => normalizeEquipmentRecord(item, settings));
+    writeArrayWithLegacy(KEYS.fleetDeletedEquipment, finalSynced, ["deletedEquipment"]);
+    return finalSynced;
   } catch (error) {
     console.error("saveDeletedEquipment failed, saving to localStorage fallback:", error);
-    writeArrayWithLegacy(KEYS.fleetDeletedEquipment, safeData, ["deletedEquipment"]);
-    return safeData;
+    writeArrayWithLegacy(KEYS.fleetDeletedEquipment, normalized, ["deletedEquipment"]);
+    return normalized;
   }
 }
 
@@ -738,7 +1148,8 @@ export async function saveDeletedEquipment(data) {
 ------------------------- */
 export async function loadWorkOrders() {
   try {
-    return await readCollection(COLLECTIONS.workOrders);
+    const rows = await readCollection(COLLECTIONS.workOrders);
+    return rows.map(normalizeWorkOrderRecord);
   } catch (error) {
     console.error("loadWorkOrders failed, falling back to localStorage:", error);
 
@@ -746,21 +1157,23 @@ export async function loadWorkOrders() {
       "workOrders",
       "fleet_workOrders",
       "fleetWorkorders"
-    ]);
+    ]).map(normalizeWorkOrderRecord);
   }
 }
 
 export async function saveWorkOrders(data) {
   const safeData = Array.isArray(data) ? data : [];
+  const normalized = safeData.map(normalizeWorkOrderRecord);
 
   try {
-    const synced = await syncCollection(COLLECTIONS.workOrders, safeData);
-    writeArrayWithLegacy(KEYS.fleetWorkOrders, synced, ["workOrders"]);
-    return synced;
+    const synced = await syncCollection(COLLECTIONS.workOrders, normalized);
+    const finalSynced = synced.map(normalizeWorkOrderRecord);
+    writeArrayWithLegacy(KEYS.fleetWorkOrders, finalSynced, ["workOrders"]);
+    return finalSynced;
   } catch (error) {
     console.error("saveWorkOrders failed, saving to localStorage fallback:", error);
-    writeArrayWithLegacy(KEYS.fleetWorkOrders, safeData, ["workOrders"]);
-    return safeData;
+    writeArrayWithLegacy(KEYS.fleetWorkOrders, normalized, ["workOrders"]);
+    return normalized;
   }
 }
 
@@ -769,7 +1182,8 @@ export async function saveWorkOrders(data) {
 ------------------------- */
 export async function loadInventory() {
   try {
-    return await readCollection(COLLECTIONS.inventory);
+    const rows = await readCollection(COLLECTIONS.inventory);
+    return rows.map(normalizeInventoryRecord);
   } catch (error) {
     console.error("loadInventory failed, falling back to localStorage:", error);
 
@@ -777,21 +1191,23 @@ export async function loadInventory() {
       "inventory",
       "fleet_inventory",
       "inventoryList"
-    ]);
+    ]).map(normalizeInventoryRecord);
   }
 }
 
 export async function saveInventory(data) {
   const safeData = Array.isArray(data) ? data : [];
+  const normalized = safeData.map(normalizeInventoryRecord);
 
   try {
-    const synced = await syncCollection(COLLECTIONS.inventory, safeData);
-    writeArrayWithLegacy(KEYS.fleetInventory, synced, ["inventory"]);
-    return synced;
+    const synced = await syncCollection(COLLECTIONS.inventory, normalized);
+    const finalSynced = synced.map(normalizeInventoryRecord);
+    writeArrayWithLegacy(KEYS.fleetInventory, finalSynced, ["inventory"]);
+    return finalSynced;
   } catch (error) {
     console.error("saveInventory failed, saving to localStorage fallback:", error);
-    writeArrayWithLegacy(KEYS.fleetInventory, safeData, ["inventory"]);
-    return safeData;
+    writeArrayWithLegacy(KEYS.fleetInventory, normalized, ["inventory"]);
+    return normalized;
   }
 }
 
@@ -800,7 +1216,8 @@ export async function saveInventory(data) {
 ------------------------- */
 export async function loadVendors() {
   try {
-    return await readCollection(COLLECTIONS.vendors);
+    const rows = await readCollection(COLLECTIONS.vendors);
+    return rows.map(item => normalizePlainListRecord(item, "vendor"));
   } catch (error) {
     console.error("loadVendors failed, falling back to localStorage:", error);
 
@@ -808,21 +1225,23 @@ export async function loadVendors() {
       "vendors",
       "fleet_vendors",
       "vendorList"
-    ]);
+    ]).map(item => normalizePlainListRecord(item, "vendor"));
   }
 }
 
 export async function saveVendors(data) {
   const safeData = Array.isArray(data) ? data : [];
+  const normalized = safeData.map(item => normalizePlainListRecord(item, "vendor"));
 
   try {
-    const synced = await syncCollection(COLLECTIONS.vendors, safeData);
-    writeArrayWithLegacy(KEYS.fleetVendors, synced, ["vendors"]);
-    return synced;
+    const synced = await syncCollection(COLLECTIONS.vendors, normalized);
+    const finalSynced = synced.map(item => normalizePlainListRecord(item, "vendor"));
+    writeArrayWithLegacy(KEYS.fleetVendors, finalSynced, ["vendors"]);
+    return finalSynced;
   } catch (error) {
     console.error("saveVendors failed, saving to localStorage fallback:", error);
-    writeArrayWithLegacy(KEYS.fleetVendors, safeData, ["vendors"]);
-    return safeData;
+    writeArrayWithLegacy(KEYS.fleetVendors, normalized, ["vendors"]);
+    return normalized;
   }
 }
 
@@ -831,7 +1250,8 @@ export async function saveVendors(data) {
 ------------------------- */
 export async function loadPurchaseOrders() {
   try {
-    return await readCollection(COLLECTIONS.purchaseOrders);
+    const rows = await readCollection(COLLECTIONS.purchaseOrders);
+    return rows.map(item => normalizePlainListRecord(item, "purchaseOrder"));
   } catch (error) {
     console.error("loadPurchaseOrders failed, falling back to localStorage:", error);
 
@@ -839,197 +1259,88 @@ export async function loadPurchaseOrders() {
       "purchaseOrders",
       "fleet_purchaseOrders",
       "poList"
-    ]);
+    ]).map(item => normalizePlainListRecord(item, "purchaseOrder"));
   }
 }
 
 export async function savePurchaseOrders(data) {
   const safeData = Array.isArray(data) ? data : [];
+  const normalized = safeData.map(item => normalizePlainListRecord(item, "purchaseOrder"));
 
   try {
-    const synced = await syncCollection(COLLECTIONS.purchaseOrders, safeData);
-    writeArrayWithLegacy(KEYS.fleetPurchaseOrders, synced, ["purchaseOrders"]);
-    return synced;
+    const synced = await syncCollection(COLLECTIONS.purchaseOrders, normalized);
+    const finalSynced = synced.map(item => normalizePlainListRecord(item, "purchaseOrder"));
+    writeArrayWithLegacy(KEYS.fleetPurchaseOrders, finalSynced, ["purchaseOrders"]);
+    return finalSynced;
   } catch (error) {
     console.error("savePurchaseOrders failed, saving to localStorage fallback:", error);
-    writeArrayWithLegacy(KEYS.fleetPurchaseOrders, safeData, ["purchaseOrders"]);
-    return safeData;
+    writeArrayWithLegacy(KEYS.fleetPurchaseOrders, normalized, ["purchaseOrders"]);
+    return normalized;
   }
 }
 
 /* -------------------------
-   ONE-TIME LOCAL -> FIRESTORE MIGRATION
+   GRID SETTINGS
 ------------------------- */
-export async function migrateLocalDataToFirestore() {
-  const localSettings = getObject(KEYS.fleetSettings, getDefaultSettings());
-
-  const localEquipment = migrateArrayKey(KEYS.fleetEquipment, [
-    "equipment",
-    "fleet_equipment",
-    "equipmentList"
-  ]);
-
-  const localDeletedEquipment = migrateArrayKey(KEYS.fleetDeletedEquipment, [
-    "deletedEquipment",
-    "fleet_deleted_equipment",
-    "deletedEquipmentList"
-  ]);
-
-  const localWorkOrders = migrateArrayKey(KEYS.fleetWorkOrders, [
-    "workOrders",
-    "fleet_workOrders",
-    "fleetWorkorders"
-  ]);
-
-  const localInventory = migrateArrayKey(KEYS.fleetInventory, [
-    "inventory",
-    "fleet_inventory",
-    "inventoryList"
-  ]);
-
-  const localVendors = migrateArrayKey(KEYS.fleetVendors, [
-    "vendors",
-    "fleet_vendors",
-    "vendorList"
-  ]);
-
-  const localPurchaseOrders = migrateArrayKey(KEYS.fleetPurchaseOrders, [
-    "purchaseOrders",
-    "fleet_purchaseOrders",
-    "poList"
-  ]);
-
-  await saveSettings(localSettings);
-  await saveEquipment(localEquipment);
-  await saveDeletedEquipment(localDeletedEquipment);
-  await saveWorkOrders(localWorkOrders);
-  await saveInventory(localInventory);
-  await saveVendors(localVendors);
-  await savePurchaseOrders(localPurchaseOrders);
-  await ensureDefaultUser();
-
-  return {
-    success: true,
-    migrated: {
-      settings: true,
-      equipment: localEquipment.length,
-      deletedEquipment: localDeletedEquipment.length,
-      workOrders: localWorkOrders.length,
-      inventory: localInventory.length,
-      vendors: localVendors.length,
-      purchaseOrders: localPurchaseOrders.length
-    }
-  };
+export function loadEquipmentColumns(defaults = []) {
+  const columns = getArray(KEYS.fleetEquipmentColumns);
+  return columns.length ? columns : (Array.isArray(defaults) ? defaults : []);
 }
 
-/* -------------------------
-   OPTIONAL REAL-TIME LISTENERS
-------------------------- */
-export async function subscribeToCollection(collectionName, callback) {
-  const ctx = await getFirestoreContext();
-
-  if (!ctx.connected || !ctx.db || !ctx.fns || typeof callback !== "function") {
-    return () => {};
-  }
-
-  const { collection, onSnapshot } = ctx.fns;
-
-  return onSnapshot(collection(ctx.db, collectionName), snapshot => {
-    const rows = snapshot.docs.map(docSnap => ({
-      id: docSnap.id,
-      ...docSnap.data()
-    }));
-
-    callback(rows);
-  });
-}
-
-export async function subscribeToEquipment(callback) {
-  return subscribeToCollection(COLLECTIONS.equipment, callback);
-}
-
-export async function subscribeToDeletedEquipment(callback) {
-  return subscribeToCollection(COLLECTIONS.deletedEquipment, callback);
-}
-
-export async function subscribeToInventory(callback) {
-  return subscribeToCollection(COLLECTIONS.inventory, callback);
-}
-
-export async function subscribeToVendors(callback) {
-  return subscribeToCollection(COLLECTIONS.vendors, callback);
-}
-
-export async function subscribeToWorkOrders(callback) {
-  return subscribeToCollection(COLLECTIONS.workOrders, callback);
-}
-
-export async function subscribeToPurchaseOrders(callback) {
-  return subscribeToCollection(COLLECTIONS.purchaseOrders, callback);
-}
-
-/* -------------------------
-   EQUIPMENT GRID / COLUMN SETTINGS
-------------------------- */
-export function loadEquipmentColumns(defaultColumns = []) {
-  const saved =
-    safeParse(localStorage.getItem(KEYS.fleetEquipmentColumns), null) ??
-    safeParse(localStorage.getItem("equipmentColumns"), defaultColumns);
-
-  return Array.isArray(saved) ? saved : defaultColumns;
+export function saveEquipmentColumns(columns) {
+  setArray(KEYS.fleetEquipmentColumns, Array.isArray(columns) ? columns : []);
 }
 
 export function loadEquipmentGridState(defaultState = {}) {
-  const saved =
-    safeParse(localStorage.getItem(KEYS.fleetEquipmentGridState), null) ??
-    safeParse(localStorage.getItem("equipmentGridState"), defaultState);
-
-  return saved && typeof saved === "object" && !Array.isArray(saved)
-    ? saved
-    : defaultState;
+  return getObject(KEYS.fleetEquipmentGridState, defaultState);
 }
 
-export function saveEquipmentGridSettings(columns, state) {
-  const safeColumns = Array.isArray(columns) ? columns : [];
-  const safeState =
-    state && typeof state === "object" && !Array.isArray(state) ? state : {};
+export function saveEquipmentGridSettings(columnsOrState, maybeState) {
+  if (Array.isArray(columnsOrState) && maybeState && typeof maybeState === "object") {
+    setArray(KEYS.fleetEquipmentColumns, columnsOrState);
+    setObject(KEYS.fleetEquipmentGridState, maybeState, {});
+    return;
+  }
 
-  localStorage.setItem(KEYS.fleetEquipmentColumns, JSON.stringify(safeColumns));
-  localStorage.setItem(KEYS.fleetEquipmentGridState, JSON.stringify(safeState));
-
-  localStorage.setItem("equipmentColumns", JSON.stringify(safeColumns));
-  localStorage.setItem("equipmentGridState", JSON.stringify(safeState));
+  setObject(KEYS.fleetEquipmentGridState, columnsOrState, {});
 }
 
-/* -------------------------
-   INVENTORY GRID / COLUMN SETTINGS
-------------------------- */
-export function loadInventoryColumns(defaultColumns = []) {
-  const saved =
-    safeParse(localStorage.getItem(KEYS.fleetInventoryColumns), null) ??
-    safeParse(localStorage.getItem("inventoryColumns"), defaultColumns);
+export function loadInventoryColumns(defaults = []) {
+  const columns = getArray(KEYS.fleetInventoryColumns);
+  return columns.length ? columns : (Array.isArray(defaults) ? defaults : []);
+}
 
-  return Array.isArray(saved) ? saved : defaultColumns;
+export function saveInventoryColumns(columns) {
+  setArray(KEYS.fleetInventoryColumns, Array.isArray(columns) ? columns : []);
 }
 
 export function loadInventoryGridState(defaultState = {}) {
-  const saved =
-    safeParse(localStorage.getItem(KEYS.fleetInventoryGridState), null) ??
-    safeParse(localStorage.getItem("inventoryGridState"), defaultState);
-
-  return saved && typeof saved === "object" && !Array.isArray(saved)
-    ? saved
-    : defaultState;
+  return getObject(KEYS.fleetInventoryGridState, defaultState);
 }
 
-export function saveInventoryGridSettings(columns, state) {
-  const safeColumns = Array.isArray(columns) ? columns : [];
-  const safeState =
-    state && typeof state === "object" && !Array.isArray(state) ? state : {};
+export function saveInventoryGridSettings(columnsOrState, maybeState) {
+  if (Array.isArray(columnsOrState) && maybeState && typeof maybeState === "object") {
+    setArray(KEYS.fleetInventoryColumns, columnsOrState);
+    setObject(KEYS.fleetInventoryGridState, maybeState, {});
+    return;
+  }
 
-  localStorage.setItem(KEYS.fleetInventoryColumns, JSON.stringify(safeColumns));
-  localStorage.setItem(KEYS.fleetInventoryGridState, JSON.stringify(safeState));
+  setObject(KEYS.fleetInventoryGridState, columnsOrState, {});
+}
 
-  localStorage.setItem("inventoryColumns", JSON.stringify(safeColumns));
-  localStorage.setItem("inventoryGridState", JSON.stringify(safeState));
+/* -------------------------
+   OPTIONAL HELPERS FOR NEW SERVICE LAYER
+------------------------- */
+export async function migrateEquipmentServiceHistory() {
+  const settings = await loadSettings();
+  const equipment = await loadEquipment();
+
+  const nextEquipment = equipment.map(item => ({
+    ...item,
+    serviceHistory: normalizeServiceHistoryMap(
+      ensureEquipmentServiceHistory(item, settings)
+    )
+  }));
+
+  return saveEquipment(nextEquipment);
 }

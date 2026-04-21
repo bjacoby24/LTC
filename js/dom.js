@@ -1,45 +1,63 @@
-import { byId, qs, qsa } from "./utils.js";
+function byId(id) {
+  return document.getElementById(id);
+}
+
+function qsa(selector, root = document) {
+  return Array.from(root.querySelectorAll(selector));
+}
 
 export function getDom() {
   return {
     /* -------------------------
        APP / LOGIN
     ------------------------- */
-    loginScreen: byId("loginScreen"),
     appWrapper: byId("appWrapper"),
-    loginBtn: byId("loginBtn"),
+    loginScreen: byId("loginScreen"),
     loginUsername: byId("loginUsername"),
     loginPassword: byId("loginPassword"),
+    loginBtn: byId("loginBtn"),
+    logoutBtn: byId("logoutBtn"),
     loginError: byId("loginError"),
+    currentUsername: byId("currentUsername"),
 
     /* -------------------------
-       SETTINGS
+       NAV / VIEWS
     ------------------------- */
+    sidebar: byId("sidebar"),
+    navLinks: qsa("#sidebar a[data-view]"),
+    appViews: byId("appViews"),
+    views: qsa("#appViews .view"),
+
+    dashboardView: byId("dashboardView"),
+    equipmentView: byId("equipmentView"),
+    deletedEquipmentView: byId("deletedEquipmentView"),
+    workOrdersView: byId("workOrdersView"),
+    inventoryView: byId("inventoryView"),
+    vendorsView: byId("vendorsView"),
+    purchaseOrdersView: byId("purchaseOrdersView"),
+
+    /* -------------------------
+       GLOBAL BUTTONS / PANELS
+    ------------------------- */
+    settingsBtn: byId("settingsBtn"),
     settingsMenuBtn: byId("settingsMenuBtn"),
     settingsDropdown: byId("settingsDropdown"),
     openSettingsBtn: byId("openSettingsBtn"),
-    openServicesBtn: byId("openServicesBtn") || byId("servicesBtn"),
+    openServicesBtn: byId("openServicesBtn"),
+    manageUsersBtn: byId("manageUsersBtn"),
     changePasswordBtn: byId("changePasswordBtn"),
-    logoutBtn: byId("logoutBtn"),
 
     settingsPanel: byId("settingsPanel"),
-    saveSettingsBtn: byId("saveSettingsBtn"),
-    closeSettingsBtn: byId("closeSettingsBtn"),
-
-    companyNameSetting: byId("companyNameSetting"),
-    defaultLocationSetting: byId("defaultLocationSetting"),
-    themeSetting: byId("themeSetting"),
-
-    /* -------------------------
-       PASSWORD MODAL
-    ------------------------- */
-    passwordModal: byId("passwordModal"),
-    closePasswordModalBtn: byId("closePasswordModalBtn"),
-    savePasswordBtn: byId("savePasswordBtn"),
-    newPasswordInput: byId("newPasswordInput"),
+    servicesPanel: byId("servicesPanel"),
+    formPanel: byId("formPanel"),
+    inventoryFormPanel: byId("inventoryFormPanel"),
+    inventoryProfilePanel: byId("inventoryProfilePanel"),
+    vendorFormPanel: byId("vendorFormPanel"),
+    workOrderFormPanel: byId("workOrderFormPanel"),
+    poFormPanel: byId("poFormPanel"),
 
     /* -------------------------
-       APP MESSAGE / CONFIRM MODAL
+       APP MODAL
     ------------------------- */
     appModal: byId("appModal"),
     appModalTitle: byId("appModalTitle"),
@@ -47,75 +65,95 @@ export function getDom() {
     appModalConfirmBtn: byId("appModalConfirmBtn"),
     appModalCancelBtn: byId("appModalCancelBtn"),
     appModalCloseBtn: byId("appModalCloseBtn"),
+    appModalActions: byId("appModalActions"),
 
     /* -------------------------
-       SERVICE TRACKING MODAL
+       DASHBOARD
     ------------------------- */
-    serviceTrackingModal: byId("serviceTrackingModal"),
-    serviceTrackingModalTitle: byId("serviceTrackingModalTitle"),
-    serviceTrackingTaskName: byId("serviceTrackingTaskName"),
-    serviceTrackingLastDateInput: byId("serviceTrackingLastDateInput"),
-    serviceTrackingLastMilesInput: byId("serviceTrackingLastMilesInput"),
-    serviceTrackingNotesInput: byId("serviceTrackingNotesInput"),
-    saveServiceTrackingBtn: byId("saveServiceTrackingBtn"),
-    cancelServiceTrackingBtn: byId("cancelServiceTrackingBtn"),
-    closeServiceTrackingModalBtn: byId("closeServiceTrackingModalBtn"),
+    dashboardGreeting: byId("dashboardGreeting"),
+    dashboardGrid: byId("dashboardGrid"),
+
+    dashDueServicesSection: byId("dashDueServicesSection"),
+    dashDueServicesTabs: byId("dashDueServicesTabs"),
+    dashDueServicesCategories: byId("dashDueServicesCategories"),
+    dashDueServicesList: byId("dashDueServicesList"),
+    equipmentServicesList: byId("equipmentServicesList"),
+
+    dueServicesTabs: qsa(".dueServicesTab"),
+    dueServicesCategoryTabs: qsa(".dueServicesCategoryTab"),
+
+    editDashboardBtn: byId("editDashboardBtn"),
+    dashboardEditorModal: byId("dashboardEditorModal"),
+    dashboardWidgetEditorList: byId("dashboardWidgetEditorList"),
+    closeDashboardEditorBtn: byId("closeDashboardEditorBtn"),
+    saveDashboardEditorBtn: byId("saveDashboardEditorBtn"),
+    resetDashboardLayoutBtn: byId("resetDashboardLayoutBtn"),
+
+    dashActiveCount: byId("dashActiveCount"),
+    dashInactiveCount: byId("dashInactiveCount"),
+    dashInRepairCount: byId("dashInRepairCount"),
+
+    dashWOOpen: byId("dashWOOpen"),
+    dashWOPending: byId("dashWOPending"),
+    dashWOCompleted: byId("dashWOCompleted"),
+
+    dashOpenIssues: byId("dashOpenIssues"),
+    dashOverdueIssues: byId("dashOverdueIssues"),
+
+    dashMonthServiceCost: byId("dashMonthServiceCost"),
+    dashYearServiceCost: byId("dashYearServiceCost"),
+    dashTotalWOCost: byId("dashTotalWOCost"),
+    dashTotalPOCost: byId("dashTotalPOCost"),
+    dashCombinedCost: byId("dashCombinedCost"),
+
+    dashRecentActivity: byId("dashRecentActivity"),
+    dashWeatherSection: byId("dashWeatherSection"),
+    dashWeatherSummary: byId("dashWeatherSummary"),
 
     /* -------------------------
-       NAVIGATION
-    ------------------------- */
-    views: qsa(".view"),
-    navLinks: qsa("#sidebar a"),
-    homeLogo: byId("homeLogo"),
-
-    /* -------------------------
-       SHARED PANELS
-    ------------------------- */
-    formPanel: byId("formPanel"),
-    inventoryFormPanel: byId("inventoryFormPanel"),
-    vendorFormPanel: byId("vendorFormPanel"),
-    workOrderFormPanel: byId("workOrderFormPanel"),
-    poFormPanel: byId("poFormPanel"),
-
-    /* -------------------------
-       EQUIPMENT
+       EQUIPMENT - MAIN
     ------------------------- */
     equipmentListSection: byId("equipmentListSection"),
     equipmentProfileSection: byId("equipmentProfileSection"),
-    equipmentTable: byId("equipmentTable"),
-    equipmentTableBody: qs("#equipmentTable tbody"),
+
+    openFormBtn: byId("openFormBtn"),
+    editProfileBtn: byId("editProfileBtn"),
+    backToEquipmentListBtn: byId("backToEquipmentListBtn"),
+    addProfileWOBtn: byId("addProfileWOBtn"),
+
+    deleteSelectedEquipmentBtn: byId("deleteSelectedEquipmentBtn"),
+    cancelEquipmentSelectionBtn: byId("cancelEquipmentSelectionBtn"),
+
     equipmentGlobalSearch: byId("equipmentGlobalSearch"),
     equipmentResultCount: byId("equipmentResultCount"),
-    equipmentColumnFilters: byId("equipmentColumnFilters"),
+
+    equipmentTable: byId("equipmentTable"),
     equipmentTableHeaderRow: byId("equipmentTableHeaderRow"),
+    equipmentColumnFilters: byId("equipmentColumnFilters"),
 
     equipmentOptionsBtn: byId("equipmentOptionsBtn"),
     equipmentOptionsDropdown: byId("equipmentOptionsDropdown"),
-    manageColumnsBtn: byId("manageColumnsBtn"),
+    manageEquipmentColumnsBtn: byId("manageEquipmentColumnsBtn"),
     clearEquipmentFiltersBtn: byId("clearEquipmentFiltersBtn"),
+    exportEquipmentBtn: byId("exportEquipmentBtn"),
     importEquipmentBtn: byId("importEquipmentBtn"),
-    equipmentImportInput: byId("equipmentImportInput"),
     openDeletedEquipmentBtn: byId("openDeletedEquipmentBtn"),
-    openFormBtn: byId("openFormBtn"),
-    closeColumnManagerBtn: byId("closeColumnManagerBtn"),
-
-    backToEquipmentListBtn: byId("backToEquipmentListBtn"),
-    editProfileBtn: byId("editProfileBtn"),
-    addProfileWOBtn: byId("addProfileWOBtn"),
-
-    equipmentHistoryTableBody: qs("#equipmentHistoryTable tbody"),
-    equipmentServicesTableBody: qs("#equipmentServicesTable tbody"),
-    partAssignmentHistoryTableBody: qs("#partAssignmentHistoryTable tbody"),
+    equipmentImportInput: byId("equipmentImportInput"),
 
     columnManagerPanel: byId("columnManagerPanel"),
+    closeColumnManagerBtn: byId("closeColumnManagerBtn"),
     columnManagerList: byId("columnManagerList"),
+    newCustomColumnInput: byId("newCustomColumnInput"),
+    addCustomColumnBtn: byId("addCustomColumnBtn"),
 
+    /* -------------------------
+       EQUIPMENT - FORM
+    ------------------------- */
     formTitle: byId("formTitle"),
     saveBtn: byId("saveBtn"),
     updateBtn: byId("updateBtn"),
     deleteBtn: byId("deleteBtn"),
     closeBtn: byId("closeBtn"),
-    decodeVinBtn: byId("decodeVinBtn"),
 
     unit: byId("unit"),
     type: byId("type"),
@@ -136,13 +174,10 @@ export function getDom() {
     fuelType: byId("fuelType"),
     engine: byId("engine"),
 
-    historyStatusFilter: byId("historyStatusFilter"),
-    historyDateFrom: byId("historyDateFrom"),
-    historyDateTo: byId("historyDateTo"),
-    applyHistoryFiltersBtn: byId("applyHistoryFiltersBtn"),
-    clearHistoryFiltersBtn: byId("clearHistoryFiltersBtn"),
-
-    profileTabs: qsa(".profileTab"),
+    /* -------------------------
+       EQUIPMENT - PROFILE
+    ------------------------- */
+    profileTabs: qsa("[data-profile-tab]"),
     profileTabContents: qsa(".profileTabContent"),
 
     profileUnit: byId("profileUnit"),
@@ -163,69 +198,96 @@ export function getDom() {
     profileDriveType: byId("profileDriveType"),
     profileFuelType: byId("profileFuelType"),
     profileEngine: byId("profileEngine"),
-    profileCylinders: byId("profileCylinders"),
+
+    historyStatusFilter: byId("historyStatusFilter"),
+    historyDateFrom: byId("historyDateFrom"),
+    historyDateTo: byId("historyDateTo"),
+    applyHistoryFiltersBtn: byId("applyHistoryFiltersBtn"),
+    clearHistoryFiltersBtn: byId("clearHistoryFiltersBtn"),
+
     profileRepairCount: byId("profileRepairCount"),
     profileRepairCost: byId("profileRepairCost"),
     filteredRepairCount: byId("filteredRepairCount"),
     filteredRepairCost: byId("filteredRepairCost"),
 
-    deleteSelectedEquipmentBtn: byId("deleteSelectedEquipmentBtn"),
-    cancelEquipmentSelectionBtn: byId("cancelEquipmentSelectionBtn"),
+    equipmentHistoryTable: byId("equipmentHistoryTable"),
+    equipmentServicesTable: byId("equipmentServicesTable"),
+    partAssignmentHistoryTable: byId("partAssignmentHistoryTable"),
 
     /* -------------------------
-       WORK ORDERS NAV PAGE
+       EQUIPMENT - SERVICE TRACKING MODAL
     ------------------------- */
-    workOrdersTable: byId("workOrdersTable"),
-    workOrdersTableBody: qs("#workOrdersTable tbody"),
-    workOrdersTableHeaderRow: byId("workOrdersTableHeaderRow"),
-    woGlobalSearch: byId("woGlobalSearch"),
-    woResultCount: byId("woResultCount"),
-    woColumnFilters: byId("woColumnFilters"),
+    serviceTrackingModal: byId("serviceTrackingModal"),
+    serviceTrackingTaskName: byId("serviceTrackingTaskName"),
+    serviceTrackingLastDateInput: byId("serviceTrackingLastDateInput"),
+    serviceTrackingLastMilesInput: byId("serviceTrackingLastMilesInput"),
+    serviceTrackingNotesInput: byId("serviceTrackingNotesInput"),
+    serviceTrackingSaveBtn: byId("serviceTrackingSaveBtn"),
+    serviceTrackingCancelBtn: byId("serviceTrackingCancelBtn"),
+    serviceTrackingCloseBtn: byId("serviceTrackingCloseBtn"),
+
+    /* -------------------------
+       DELETED EQUIPMENT
+    ------------------------- */
+    deletedEquipmentTable: byId("deletedEquipmentTable"),
+    deletedEquipmentTableHeaderRow: byId("deletedEquipmentTableHeaderRow"),
+    deletedEquipmentColumnFilters: byId("deletedEquipmentColumnFilters"),
+    deletedEquipmentGlobalSearch: byId("deletedEquipmentGlobalSearch"),
+    deletedEquipmentResultCount: byId("deletedEquipmentResultCount"),
+    restoreSelectedEquipmentBtn: byId("restoreSelectedEquipmentBtn"),
+    permanentlyDeleteSelectedBtn: byId("permanentlyDeleteSelectedBtn"),
+
+    /* -------------------------
+       WORK ORDERS NAV
+    ------------------------- */
+    openWorkOrderBtn: byId("openWorkOrderBtn"),
+    openQuickWOFormBtn: byId("openQuickWOFormBtn"),
+    deleteSelectedWOBtn: byId("deleteSelectedWOBtn"),
+    cancelWOSelectionBtn: byId("cancelWOSelectionBtn"),
 
     workOrdersOptionsBtn: byId("workOrdersOptionsBtn"),
     workOrdersOptionsDropdown: byId("workOrdersOptionsDropdown"),
     manageWOColumnsBtn: byId("manageWOColumnsBtn"),
     clearWOFiltersBtn: byId("clearWOFiltersBtn"),
-    openQuickWOFormBtn: byId("openQuickWOFormBtn"),
-    deleteSelectedWOBtn: byId("deleteSelectedWOBtn"),
-    cancelWOSelectionBtn: byId("cancelWOSelectionBtn"),
+
+    workOrdersTable: byId("workOrdersTable"),
+    workOrdersTableHeaderRow: byId("workOrdersTableHeaderRow"),
+    workOrdersColumnFilters: byId("woColumnFilters"),
+    woColumnFilters: byId("woColumnFilters"),
+    woGlobalSearch: byId("woGlobalSearch"),
+    workOrdersGlobalSearch: byId("woGlobalSearch"),
+    woResultCount: byId("woResultCount"),
+    workOrdersResultCount: byId("woResultCount"),
 
     /* -------------------------
-       QUICK WORK ORDER PANEL
+       INVENTORY - GRID / LIST
     ------------------------- */
-    woEquipmentQuick: byId("woEquipmentQuick"),
-    woEquipmentMatchInfo: byId("woEquipmentMatchInfo"),
-    woMileageQuick: byId("woMileageQuick"),
-    woAssigneeQuick: byId("woAssigneeQuick"),
-    woDateScheduledQuick: byId("woDateScheduledQuick"),
-    woServiceTypeQuick: byId("woServiceTypeQuick"),
-    woInitialNotesQuick: byId("woInitialNotesQuick"),
-
-    saveQuickWOBtn: byId("saveQuickWOBtn"),
-    updateQuickWOBtn: byId("updateQuickWOBtn"),
-    deleteQuickWOBtn: byId("deleteQuickWOBtn"),
-    closeQuickWOBtn: byId("closeQuickWOBtn"),
-
-    /* -------------------------
-       INVENTORY
-    ------------------------- */
-    inventoryTable: byId("inventoryTable"),
-    inventoryTableBody: qs("#inventoryTable tbody"),
-    inventoryTableHeaderRow: byId("inventoryTableHeaderRow"),
-    inventoryGlobalSearch: byId("inventoryGlobalSearch"),
-    inventoryResultCount: byId("inventoryResultCount"),
-    inventoryColumnFilters: byId("inventoryColumnFilters"),
+    openInventoryFormBtn: byId("openInventoryFormBtn"),
+    deleteSelectedInventoryBtn: byId("deleteSelectedInventoryBtn"),
+    cancelInventorySelectionBtn: byId("cancelInventorySelectionBtn"),
 
     inventoryOptionsBtn: byId("inventoryOptionsBtn"),
     inventoryOptionsDropdown: byId("inventoryOptionsDropdown"),
     manageInventoryColumnsBtn: byId("manageInventoryColumnsBtn"),
     clearInventoryFiltersBtn: byId("clearInventoryFiltersBtn"),
     importInventoryBtn: byId("importInventoryBtn"),
+    exportInventoryBtn: byId("exportInventoryBtn"),
     inventoryImportInput: byId("inventoryImportInput"),
 
-    openInventoryFormBtn: byId("openInventoryFormBtn"),
-    deleteSelectedInventoryBtn: byId("deleteSelectedInventoryBtn"),
-    cancelInventorySelectionBtn: byId("cancelInventorySelectionBtn"),
+    inventoryTable: byId("inventoryTable"),
+    inventoryTableHeaderRow: byId("inventoryTableHeaderRow"),
+    inventoryColumnFilters: byId("inventoryColumnFilters"),
+    inventoryGlobalSearch: byId("inventoryGlobalSearch"),
+    inventoryResultCount: byId("inventoryResultCount"),
+
+    /* -------------------------
+       INVENTORY - FORM
+    ------------------------- */
+    inventoryFormTitle: byId("inventoryFormTitle"),
+    saveInventoryBtn: byId("saveInventoryBtn"),
+    updateInventoryBtn: byId("updateInventoryBtn"),
+    deleteInventoryBtn: byId("deleteInventoryBtn"),
+    closeInventoryBtn: byId("closeInventoryBtn"),
 
     invName: byId("invName"),
     invPartNumber: byId("invPartNumber"),
@@ -234,136 +296,115 @@ export function getDom() {
     invUnitCost: byId("invUnitCost"),
     invLocation: byId("invLocation"),
     invVendor: byId("invVendor"),
+    invReorderPoint: byId("invReorderPoint"),
+    invReorderQty: byId("invReorderQty"),
+    invMaxQty: byId("invMaxQty"),
+    invBinLocation: byId("invBinLocation"),
+    invManufacturer: byId("invManufacturer"),
+    invPartType: byId("invPartType"),
+    invUom: byId("invUom"),
     invNotes: byId("invNotes"),
+    invProfileNotes: byId("invProfileNotes"),
 
-    saveInventoryBtn: byId("saveInventoryBtn"),
-    updateInventoryBtn: byId("updateInventoryBtn"),
-    deleteInventoryBtn: byId("deleteInventoryBtn"),
-    closeInventoryBtn: byId("closeInventoryBtn"),
+    /* -------------------------
+       INVENTORY - PROFILE
+    ------------------------- */
+    inventoryProfileTitle: byId("inventoryProfileTitle"),
+    inventoryProfileSubtitle: byId("inventoryProfileSubtitle"),
+    closeInventoryProfileBtn: byId("closeInventoryProfileBtn"),
+    editInventoryProfileBtn: byId("editInventoryProfileBtn"),
+
+    profileInvName: byId("profileInvName"),
+    profileInvPartNumber: byId("profileInvPartNumber"),
+    profileInvCategory: byId("profileInvCategory"),
+    profileInvLocation: byId("profileInvLocation"),
+    profileInvVendor: byId("profileInvVendor"),
+    profileInvQuantity: byId("profileInvQuantity"),
+    profileInvUnitCost: byId("profileInvUnitCost"),
+    profileInvReorderPoint: byId("profileInvReorderPoint"),
+    profileInvReorderQty: byId("profileInvReorderQty"),
+    profileInvMaxQty: byId("profileInvMaxQty"),
+    profileInvBinLocation: byId("profileInvBinLocation"),
+    profileInvManufacturer: byId("profileInvManufacturer"),
+    profileInvPartType: byId("profileInvPartType"),
+    profileInvUom: byId("profileInvUom"),
+    profileInvLastPurchased: byId("profileInvLastPurchased"),
+    profileInvLastIssued: byId("profileInvLastIssued"),
+    profileInvNotes: byId("profileInvNotes"),
+    profileInvProfileNotes: byId("profileInvProfileNotes"),
+
+    inventoryPurchaseHistoryTable: byId("inventoryPurchaseHistoryTable"),
+    inventoryIssueHistoryTable: byId("inventoryIssueHistoryTable"),
+    inventoryAdjustmentHistoryTable: byId("inventoryAdjustmentHistoryTable"),
+
+    /* -------------------------
+       INVENTORY - ADMIN QUICK ADJUST
+    ------------------------- */
+    inventoryAdminQuickAdjustSection: byId("inventoryAdminQuickAdjustSection"),
+    inventoryAdjustType: byId("inventoryAdjustType"),
+    inventoryAdjustQty: byId("inventoryAdjustQty"),
+    inventoryAdjustReason: byId("inventoryAdjustReason"),
+    saveInventoryAdjustmentBtn: byId("saveInventoryAdjustmentBtn"),
+    inventoryAdjustmentHistorySection: byId("inventoryAdjustmentHistorySection"),
 
     /* -------------------------
        VENDORS
     ------------------------- */
-    vendorsTable: byId("vendorsTable"),
-    vendorsTableBody: qs("#vendorsTable tbody"),
-    vendorsTableHeaderRow: byId("vendorsTableHeaderRow"),
-    vendorsGlobalSearch: byId("vendorsGlobalSearch"),
-    vendorsResultCount: byId("vendorsResultCount"),
-    vendorsColumnFilters: byId("vendorsColumnFilters"),
+    openVendorFormBtn: byId("openVendorFormBtn"),
+    deleteSelectedVendorBtn: byId("deleteSelectedVendorBtn"),
+    cancelVendorSelectionBtn: byId("cancelVendorSelectionBtn"),
 
     vendorsOptionsBtn: byId("vendorsOptionsBtn"),
     vendorsOptionsDropdown: byId("vendorsOptionsDropdown"),
     manageVendorColumnsBtn: byId("manageVendorColumnsBtn"),
     clearVendorFiltersBtn: byId("clearVendorFiltersBtn"),
-    openVendorFormBtn: byId("openVendorFormBtn"),
-    deleteSelectedVendorBtn: byId("deleteSelectedVendorBtn"),
-    cancelVendorSelectionBtn: byId("cancelVendorSelectionBtn"),
 
-    vendorName: byId("vendorName"),
-    vendorContact: byId("vendorContact"),
-    vendorPhone: byId("vendorPhone"),
-    vendorEmail: byId("vendorEmail"),
-    vendorAddress: byId("vendorAddress"),
-
-    saveVendorBtn: byId("saveVendorBtn"),
-    updateVendorBtn: byId("updateVendorBtn"),
-    deleteVendorBtn: byId("deleteVendorBtn"),
-    closeVendorBtn: byId("closeVendorBtn"),
+    vendorsTable: byId("vendorsTable"),
+    vendorsTableHeaderRow: byId("vendorsTableHeaderRow"),
+    vendorsColumnFilters: byId("vendorsColumnFilters"),
+    vendorsGlobalSearch: byId("vendorsGlobalSearch"),
+    vendorsResultCount: byId("vendorsResultCount"),
 
     /* -------------------------
-       PURCHASE ORDERS NAV PAGE
+       PURCHASE ORDERS
     ------------------------- */
-    poTable: byId("poTable"),
-    poTableBody: qs("#poTable tbody"),
-    poTableHeaderRow: byId("poTableHeaderRow"),
-    poGlobalSearch: byId("poGlobalSearch"),
-    poResultCount: byId("poResultCount"),
-    poColumnFilters: byId("poColumnFilters"),
+    openPurchaseOrderBtn: byId("openPurchaseOrderBtn"),
+    openPOFormBtn: byId("openPOFormBtn"),
+    deleteSelectedPOBtn: byId("deleteSelectedPOBtn"),
+    cancelPOSelectionBtn: byId("cancelPOSelectionBtn"),
 
     poOptionsBtn: byId("poOptionsBtn"),
     poOptionsDropdown: byId("poOptionsDropdown"),
     managePOColumnsBtn: byId("managePOColumnsBtn"),
     clearPOFiltersBtn: byId("clearPOFiltersBtn"),
-    openPOFormBtn: byId("openPOFormBtn"),
-    deleteSelectedPOBtn: byId("deleteSelectedPOBtn"),
-    cancelPOSelectionBtn: byId("cancelPOSelectionBtn"),
+
+    purchaseOrdersTable: byId("purchaseOrdersTable"),
+    purchaseOrdersTableHeaderRow: byId("purchaseOrdersTableHeaderRow"),
+    purchaseOrdersColumnFilters: byId("purchaseOrdersColumnFilters"),
+    purchaseOrdersGlobalSearch: byId("purchaseOrdersGlobalSearch"),
+    purchaseOrdersResultCount: byId("purchaseOrdersResultCount"),
 
     /* -------------------------
-       PURCHASE ORDER SIDE PANEL
+       SETTINGS
     ------------------------- */
-    poNumberInput: byId("poNumberInput"),
-    poVendorInput: byId("poVendorInput"),
-    poDateInput: byId("poDateInput"),
-    poStatusInput: byId("poStatusInput"),
-    poTotalInput: byId("poTotalInput"),
-    poNotesInput: byId("poNotesInput"),
-
-    savePOBtn: byId("savePOBtn"),
-    updatePOBtn: byId("updatePOBtn"),
-    deletePOBtn: byId("deletePOBtn"),
-    closePOBtn: byId("closePOBtn"),
+    companyNameInput: byId("companyNameInput"),
+    defaultLocationInput: byId("defaultLocationInput"),
+    themeSelect: byId("themeSelect"),
+    weatherZipInput: byId("weatherZipInput"),
+    saveSettingsBtn: byId("saveSettingsBtn"),
+    settingsServicesBtn: byId("settingsServicesBtn"),
+    settingsUsersBtn: byId("settingsUsersBtn"),
+    settingsPasswordBtn: byId("settingsPasswordBtn"),
 
     /* -------------------------
-       DELETED EQUIPMENT
+       USERS / PASSWORD
     ------------------------- */
-    deletedEquipmentTable: byId("deletedEquipmentTable"),
-    deletedEquipmentTableBody: qs("#deletedEquipmentTable tbody"),
-    deletedEquipmentTableHeaderRow: byId("deletedEquipmentTableHeaderRow"),
-    deletedEquipmentGlobalSearch: byId("deletedEquipmentGlobalSearch"),
-    deletedEquipmentResultCount: byId("deletedEquipmentResultCount"),
-    deletedEquipmentColumnFilters: byId("deletedEquipmentColumnFilters"),
-
-    deletedEquipmentOptionsBtn: byId("deletedEquipmentOptionsBtn"),
-    deletedEquipmentOptionsDropdown: byId("deletedEquipmentOptionsDropdown"),
-    manageDeletedEquipmentColumnsBtn: byId("manageDeletedEquipmentColumnsBtn"),
-    clearDeletedEquipmentFiltersBtn: byId("clearDeletedEquipmentFiltersBtn"),
-    restoreSelectedEquipmentBtn: byId("restoreSelectedEquipmentBtn"),
-    permanentlyDeleteSelectedEquipmentBtn: byId("permanentlyDeleteSelectedEquipmentBtn"),
-    cancelDeletedSelectionBtn: byId("cancelDeletedSelectionBtn"),
-
-    deletedEquipmentPanel: byId("deletedEquipmentPanel"),
-    restoreDeletedEquipmentBtn: byId("restoreDeletedEquipmentBtn"),
-    permanentlyDeleteEquipmentBtn: byId("permanentlyDeleteEquipmentBtn"),
-
-    deletedProfileUnit: byId("deletedProfileUnit"),
-    deletedProfileType: byId("deletedProfileType"),
-    deletedProfileYear: byId("deletedProfileYear"),
-    deletedProfileVin: byId("deletedProfileVin"),
-    deletedProfilePlate: byId("deletedProfilePlate"),
-    deletedProfileState: byId("deletedProfileState"),
-    deletedProfileStatus: byId("deletedProfileStatus"),
-    deletedProfileLocation: byId("deletedProfileLocation"),
-    deletedProfilePM: byId("deletedProfilePM"),
-    deletedProfileBusiness: byId("deletedProfileBusiness"),
-    deletedProfileRim: byId("deletedProfileRim"),
-    deletedProfileSize: byId("deletedProfileSize"),
-    deletedProfilePressure: byId("deletedProfilePressure"),
-
-    /* -------------------------
-       DASHBOARD
-    ------------------------- */
-    dashActiveCount: byId("dashActiveCount"),
-    dashInactiveCount: byId("dashInactiveCount"),
-    dashInShopCount: byId("dashInShopCount"),
-    dashOutOfServiceCount: byId("dashOutOfServiceCount"),
-
-    dashWOOpen: byId("dashWOOpen"),
-    dashWOPending: byId("dashWOPending"),
-    dashWOCompleted: byId("dashWOCompleted"),
-
-    dashOverduePM: byId("dashOverduePM"),
-    dashDueSoonPM: byId("dashDueSoonPM"),
-    dashAvgResolveDays: byId("dashAvgResolveDays"),
-
-    dashTopRepairs: byId("dashTopRepairs"),
-    dashOpenIssues: byId("dashOpenIssues"),
-    dashOverdueIssues: byId("dashOverdueIssues"),
-
-    dashServiceCostMonth: byId("dashServiceCostMonth"),
-    dashServiceCostTotal: byId("dashServiceCostTotal"),
-    dashTotalWOCost: byId("dashTotalWOCost"),
-    dashTotalPOCost: byId("dashTotalPOCost"),
-    dashCombinedCost: byId("dashCombinedCost"),
-    dashRecentActivity: byId("dashRecentActivity")
+    usersFrame: byId("usersFrame"),
+    currentPasswordInput: byId("currentPasswordInput"),
+    newPasswordInput: byId("newPasswordInput"),
+    confirmPasswordInput: byId("confirmPasswordInput"),
+    savePasswordBtn: byId("savePasswordBtn")
   };
 }
+
+export { byId, qsa };

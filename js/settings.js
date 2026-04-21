@@ -4,10 +4,9 @@ import {
   loadSettings,
   saveSettings,
   clearLoggedIn,
-  loadUsers,
-  saveUsers,
   updateUserPassword,
-  getLoggedInUsername
+  getLoggedInUsername,
+  getLoggedInUser
 } from "./storage.js";
 
 export async function initSettings() {
@@ -16,21 +15,182 @@ export async function initSettings() {
   let appModalResolver = null;
   let appModalLastFocus = null;
   let settingsCache = getDefaultSettings();
+  let eventsBound = false;
 
-  function getDefaultSettings() {
-    return {
-      companyName: "",
-      defaultLocation: "",
-      theme: "default",
-      serviceTasks: [],
-      serviceTemplates: []
-    };
+  function byId(id) {
+    return document.getElementById(id);
   }
 
   function safeObject(value) {
     return value && typeof value === "object" && !Array.isArray(value)
       ? value
       : {};
+  }
+
+  function getDefaultSettings() {
+    return {
+      companyName: "",
+      defaultLocation: "",
+      theme: "default",
+      weatherZip: "62201",
+      serviceTasks: [],
+      serviceTemplates: []
+    };
+  }
+
+  function normalizeLower(value) {
+    return normalizeText(value).toLowerCase();
+  }
+
+  function getCurrentPermissions() {
+    const loggedInUser = getLoggedInUser();
+    const permissions =
+      loggedInUser &&
+      typeof loggedInUser === "object" &&
+      loggedInUser.permissions &&
+      typeof loggedInUser.permissions === "object"
+        ? loggedInUser.permissions
+        : {};
+
+    return {
+      settingsAccess: false,
+      userManagement: false,
+      ...permissions
+    };
+  }
+
+  function canAccessSettings() {
+    return !!getCurrentPermissions().settingsAccess;
+  }
+
+  function canAccessUserManagement() {
+    return !!getCurrentPermissions().userManagement;
+  }
+
+  function canAccessServices() {
+    return !!getCurrentPermissions().settingsAccess;
+  }
+
+  async function showMessageModal(title = "Message", message = "") {
+    const modal = dom.appModal || byId("appModal");
+    const titleEl = dom.appModalTitle || byId("appModalTitle");
+    const messageEl = dom.appModalMessage || byId("appModalMessage");
+    const actionsEl = dom.appModalActions || byId("appModalActions");
+
+    if (!modal || !titleEl || !messageEl || !actionsEl) {
+      window.alert(message);
+      return true;
+    }
+
+    return new Promise(resolve => {
+      appModalResolver = resolve;
+      appModalLastFocus = document.activeElement;
+
+      titleEl.textContent = title;
+      messageEl.textContent = message;
+      actionsEl.innerHTML = `
+        <button type="button" id="appModalOkBtn" class="primaryBtn">OK</button>
+      `;
+
+      const okBtn = byId("appModalOkBtn");
+      okBtn?.addEventListener(
+        "click",
+        () => {
+          closeMessageModal(true);
+        },
+        { once: true }
+      );
+
+      modal.classList.add("show");
+      okBtn?.focus();
+    });
+  }
+
+  async function showConfirmModal(
+    title = "Confirm",
+    message = "",
+    confirmText = "Confirm",
+    cancelText = "Cancel",
+    danger = false
+  ) {
+    const modal = dom.appModal || byId("appModal");
+    const titleEl = dom.appModalTitle || byId("appModalTitle");
+    const messageEl = dom.appModalMessage || byId("appModalMessage");
+    const actionsEl = dom.appModalActions || byId("appModalActions");
+
+    if (!modal || !titleEl || !messageEl || !actionsEl) {
+      return window.confirm(message);
+    }
+
+    return new Promise(resolve => {
+      appModalResolver = resolve;
+      appModalLastFocus = document.activeElement;
+
+      titleEl.textContent = title;
+      messageEl.textContent = message;
+      actionsEl.innerHTML = `
+        <button type="button" id="appModalCancelBtn">${cancelText}</button>
+        <button type="button" id="appModalConfirmBtn" class="${danger ? "danger" : "primaryBtn"}">${confirmText}</button>
+      `;
+
+      const cancelBtn = byId("appModalCancelBtn");
+      const confirmBtn = byId("appModalConfirmBtn");
+
+      cancelBtn?.addEventListener(
+        "click",
+        () => {
+          closeMessageModal(false);
+        },
+        { once: true }
+      );
+
+      confirmBtn?.addEventListener(
+        "click",
+        () => {
+          closeMessageModal(true);
+        },
+        { once: true }
+      );
+
+      modal.classList.add("show");
+      confirmBtn?.focus();
+    });
+  }
+
+  function closeMessageModal(result = false) {
+    const modal = dom.appModal || byId("appModal");
+    const actionsEl = dom.appModalActions || byId("appModalActions");
+
+    if (modal) {
+      modal.classList.remove("show");
+    }
+
+    if (actionsEl) {
+      actionsEl.innerHTML = "";
+    }
+
+    const resolver = appModalResolver;
+    appModalResolver = null;
+
+    if (appModalLastFocus && typeof appModalLastFocus.focus === "function") {
+      try {
+        appModalLastFocus.focus();
+      } catch (error) {
+        console.warn("Unable to restore modal focus:", error);
+      }
+    }
+
+    appModalLastFocus = null;
+
+    if (typeof resolver === "function") {
+      resolver(result);
+    }
+  }
+
+  async function requirePermission(checkFn, title, message) {
+    if (checkFn()) return true;
+    await showMessageModal(title, message);
+    return false;
   }
 
   async function hydrateSettings() {
@@ -43,13 +203,14 @@ export async function initSettings() {
         companyName: saved.companyName || "",
         defaultLocation: saved.defaultLocation || "",
         theme: saved.theme || "default",
+        weatherZip: saved.weatherZip || "62201",
         serviceTasks: Array.isArray(saved.serviceTasks) ? saved.serviceTasks : [],
         serviceTemplates: Array.isArray(saved.serviceTemplates)
           ? saved.serviceTemplates
           : []
       };
     } catch (error) {
-      console.error("Failed to load settings:", error);
+      console.error("Failed to hydrate settings:", error);
       settingsCache = getDefaultSettings();
     }
   }
@@ -58,9 +219,88 @@ export async function initSettings() {
     return {
       ...getDefaultSettings(),
       ...settingsCache,
-      companyName: settingsCache.companyName || "",
-      defaultLocation: settingsCache.defaultLocation || "",
-      theme: settingsCache.theme || "default",
+      companyName: normalizeText(settingsCache.companyName),
+      defaultLocation: normalizeText(settingsCache.defaultLocation),
+      theme: normalizeText(settingsCache.theme || "default") || "default",
+      weatherZip: normalizeText(settingsCache.weatherZip || "62201") || "62201",
+      serviceTasks: Array.isArray(settingsCache.serviceTasks) ? settingsCache.serviceTasks : [],
+      serviceTemplates: Array.isArray(settingsCache.serviceTemplates)
+        ? settingsCache.serviceTemplates
+        : []
+    };
+  }
+
+  function applyTheme(themeValue = "default") {
+    const body = document.body;
+    if (!body) return;
+
+    body.classList.remove("theme-light", "theme-dark");
+
+    const cleanTheme = normalizeLower(themeValue);
+    if (cleanTheme === "light") {
+      body.classList.add("theme-light");
+    } else if (cleanTheme === "dark") {
+      body.classList.add("theme-dark");
+    }
+  }
+
+  function populateSettingsForm() {
+    const settings = getSettings();
+
+    const companyNameInput =
+      dom.companyNameInput || byId("companyNameInput");
+    const defaultLocationInput =
+      dom.defaultLocationInput || byId("defaultLocationInput");
+    const themeSelect =
+      dom.themeSelect || byId("themeSelect");
+    const weatherZipInput =
+      dom.weatherZipInput || byId("weatherZipInput");
+
+    if (companyNameInput) {
+      companyNameInput.value = settings.companyName || "";
+    }
+
+    if (defaultLocationInput) {
+      defaultLocationInput.value = settings.defaultLocation || "";
+    }
+
+    if (themeSelect) {
+      themeSelect.value = settings.theme || "default";
+    }
+
+    if (weatherZipInput) {
+      weatherZipInput.value = settings.weatherZip || "62201";
+    }
+
+    applyTheme(settings.theme);
+  }
+
+  async function saveSettingsFromForm() {
+    if (
+      !(await requirePermission(
+        canAccessSettings,
+        "Settings Access Required",
+        "You do not have permission to change settings."
+      ))
+    ) {
+      return;
+    }
+
+    const companyNameInput =
+      dom.companyNameInput || byId("companyNameInput");
+    const defaultLocationInput =
+      dom.defaultLocationInput || byId("defaultLocationInput");
+    const themeSelect =
+      dom.themeSelect || byId("themeSelect");
+    const weatherZipInput =
+      dom.weatherZipInput || byId("weatherZipInput");
+
+    const nextSettings = {
+      ...getSettings(),
+      companyName: normalizeText(companyNameInput?.value || ""),
+      defaultLocation: normalizeText(defaultLocationInput?.value || ""),
+      theme: normalizeText(themeSelect?.value || "default") || "default",
+      weatherZip: normalizeText(weatherZipInput?.value || "62201") || "62201",
       serviceTasks: Array.isArray(settingsCache.serviceTasks)
         ? settingsCache.serviceTasks
         : [],
@@ -68,470 +308,244 @@ export async function initSettings() {
         ? settingsCache.serviceTemplates
         : []
     };
-  }
-
-  async function persistSettings(updatedSettings) {
-    const settings = {
-      ...getDefaultSettings(),
-      ...updatedSettings,
-      serviceTasks: Array.isArray(updatedSettings?.serviceTasks)
-        ? updatedSettings.serviceTasks
-        : [],
-      serviceTemplates: Array.isArray(updatedSettings?.serviceTemplates)
-        ? updatedSettings.serviceTemplates
-        : []
-    };
-
-    settingsCache = settings;
 
     try {
-      await saveSettings(settings);
+      const saved = await saveSettings(nextSettings);
+      settingsCache = {
+        ...getDefaultSettings(),
+        ...saved
+      };
+
+      applyTheme(settingsCache.theme);
+      populateSettingsForm();
+
+      try {
+        window.dispatchEvent(
+          new CustomEvent("fleet:settings-changed", {
+            detail: { settings: settingsCache }
+          })
+        );
+      } catch (eventError) {
+        console.warn("Unable to dispatch settings changed event:", eventError);
+      }
+
+      await showMessageModal("Settings Saved", "Settings were saved successfully.");
     } catch (error) {
       console.error("Failed to save settings:", error);
-    }
-
-    return settings;
-  }
-
-  function applyTheme(theme) {
-    document.body.classList.remove("theme-dark", "theme-light");
-
-    if (theme === "dark") {
-      document.body.classList.add("theme-dark");
-    } else if (theme === "light") {
-      document.body.classList.add("theme-light");
+      await showMessageModal(
+        "Save Failed",
+        `Unable to save settings: ${error?.message || error}`
+      );
     }
   }
 
-  function closeAllSettingsPanels() {
-    if (dom.settingsPanel) dom.settingsPanel.style.display = "none";
-    if (dom.servicesPanel) dom.servicesPanel.style.display = "none";
-  }
+  function openSettingsPanel() {
+    const panel = dom.settingsPanel || byId("settingsPanel");
+    if (!panel) return;
 
-  function populateSettingsForm() {
-    const settings = getSettings();
-
-    if (dom.companyNameSetting) {
-      dom.companyNameSetting.value = settings.companyName || "";
-    }
-
-    if (dom.defaultLocationSetting) {
-      dom.defaultLocationSetting.value = settings.defaultLocation || "";
-    }
-
-    if (dom.themeSetting) {
-      dom.themeSetting.value = settings.theme || "default";
-    }
-
-    applyTheme(settings.theme || "default");
-  }
-
-  async function saveSettingsFromForm() {
-    const current = getSettings();
-
-    const settings = {
-      ...current,
-      companyName: dom.companyNameSetting?.value || "",
-      defaultLocation: dom.defaultLocationSetting?.value || "",
-      theme: dom.themeSetting?.value || "default"
-    };
-
-    await persistSettings(settings);
-    applyTheme(settings.theme);
-
-    if (dom.settingsPanel) {
-      dom.settingsPanel.style.display = "none";
-    }
-  }
-
-  async function openSettingsPanel() {
+    panel.style.display = "block";
+    panel.classList.add("show");
     populateSettingsForm();
-    closeAllSettingsPanels();
-
-    if (dom.settingsPanel) {
-      dom.settingsPanel.style.display = "block";
-    }
-
-    if (dom.settingsDropdown) {
-      dom.settingsDropdown.classList.remove("show");
-    }
-
-    await renderUsers();
   }
 
   function closeSettingsPanel() {
-    if (dom.settingsPanel) {
-      dom.settingsPanel.style.display = "none";
-    }
-  }
+    const panel = dom.settingsPanel || byId("settingsPanel");
+    if (!panel) return;
 
-  function showAppModal({
-    title = "Message",
-    message = "",
-    confirmText = "OK",
-    cancelText = "",
-    danger = false,
-    showCancel = false
-  } = {}) {
-    const modal = dom.appModal;
-    const titleEl = dom.appModalTitle;
-    const messageEl = dom.appModalMessage;
-    const confirmBtn = dom.appModalConfirmBtn;
-    const cancelBtn = dom.appModalCancelBtn;
-    const closeBtn = dom.appModalCloseBtn;
-
-    if (!modal || !titleEl || !messageEl || !confirmBtn) {
-      console.warn("App modal elements are missing.");
-      return Promise.resolve(showCancel ? false : true);
-    }
-
-    if (appModalResolver) {
-      appModalResolver(false);
-      appModalResolver = null;
-    }
-
-    appModalLastFocus = document.activeElement;
-
-    titleEl.textContent = title;
-    messageEl.textContent = message;
-    confirmBtn.textContent = confirmText || "OK";
-    confirmBtn.classList.toggle("danger", !!danger);
-
-    if (cancelBtn) {
-      cancelBtn.textContent = cancelText || "Cancel";
-      cancelBtn.style.display = showCancel ? "inline-flex" : "none";
-    }
-
-    modal.classList.add("show");
-
-    return new Promise(resolve => {
-      appModalResolver = resolve;
-
-      const finish = result => {
-        if (!appModalResolver) return;
-
-        const currentResolve = appModalResolver;
-        appModalResolver = null;
-        modal.classList.remove("show");
-        currentResolve(result);
-
-        setTimeout(() => {
-          if (appModalLastFocus && typeof appModalLastFocus.focus === "function") {
-            appModalLastFocus.focus();
-          }
-          appModalLastFocus = null;
-        }, 0);
-      };
-
-      confirmBtn.onclick = () => finish(true);
-
-      if (cancelBtn) {
-        cancelBtn.onclick = () => finish(false);
-      }
-
-      if (closeBtn) {
-        closeBtn.onclick = () => finish(false);
-      }
-
-      modal.onclick = event => {
-        if (event.target === modal) {
-          finish(false);
-        }
-      };
-
-      setTimeout(() => confirmBtn.focus(), 20);
-    });
-  }
-
-  function showMessageModal(title, message, options = {}) {
-    return showAppModal({
-      title,
-      message,
-      confirmText: options.confirmText || "OK",
-      danger: !!options.danger,
-      showCancel: false
-    });
+    panel.classList.remove("show");
+    panel.style.display = "none";
   }
 
   function openPasswordModal() {
-    if (dom.passwordModal) {
-      dom.passwordModal.classList.add("show");
-    }
+    const modal = dom.passwordModal || byId("passwordModal");
+    const currentInput = dom.currentPasswordInput || byId("currentPasswordInput");
+    const newInput = dom.newPasswordInput || byId("newPasswordInput");
+    const confirmInput = dom.confirmPasswordInput || byId("confirmPasswordInput");
 
-    if (dom.newPasswordInput) {
-      dom.newPasswordInput.value = "";
-      setTimeout(() => dom.newPasswordInput?.focus(), 20);
-    }
+    if (!modal) return;
 
-    if (dom.settingsDropdown) {
-      dom.settingsDropdown.classList.remove("show");
-    }
+    if (currentInput) currentInput.value = "";
+    if (newInput) newInput.value = "";
+    if (confirmInput) confirmInput.value = "";
+
+    modal.classList.add("show");
+    currentInput?.focus();
   }
 
   function closePasswordModal() {
-    if (dom.passwordModal) {
-      dom.passwordModal.classList.remove("show");
-    }
+    const modal = dom.passwordModal || byId("passwordModal");
+    if (!modal) return;
+    modal.classList.remove("show");
   }
 
   async function saveNewPassword() {
-    const newPassword = normalizeText(dom.newPasswordInput?.value);
+    const username = getLoggedInUsername();
+    const currentInput = dom.currentPasswordInput || byId("currentPasswordInput");
+    const newInput = dom.newPasswordInput || byId("newPasswordInput");
+    const confirmInput = dom.confirmPasswordInput || byId("confirmPasswordInput");
 
-    if (!newPassword) {
-      await showMessageModal("Missing Password", "Enter a password.");
-      dom.newPasswordInput?.focus();
-      return;
-    }
-
-    const currentUsername = getLoggedInUsername();
-
-    if (!currentUsername) {
-      await showMessageModal("Not Logged In", "No logged-in user was found.");
-      return;
-    }
-
-    try {
-      await updateUserPassword(currentUsername, newPassword);
-      closePasswordModal();
-      await showMessageModal("Password Updated", "Password updated.");
-    } catch (error) {
-      console.error("Failed to update password:", error);
-      await showMessageModal("Update Failed", "Unable to update password.");
-    }
-  }
-
-  function logoutUser() {
-    clearLoggedIn();
-
-    if (dom.settingsDropdown) {
-      dom.settingsDropdown.classList.remove("show");
-    }
-
-    if (dom.loginScreen) {
-      dom.loginScreen.style.display = "flex";
-    }
-
-    if (dom.appWrapper) {
-      dom.appWrapper.style.display = "none";
-    }
-
-    closeAllSettingsPanels();
-  }
-
-  function openServiceTemplateWindow(templateId = "") {
-    const url = templateId
-      ? `service-template.html?id=${encodeURIComponent(templateId)}`
-      : "service-template.html";
-
-    window.open(
-      url,
-      "ServiceTemplateWindow",
-      "width=1400,height=900,resizable=yes,scrollbars=yes"
-    );
-  }
-
-  async function renderUsers() {
-    const usersRoot = document.getElementById("usersList");
-    if (!usersRoot) return;
-
-    usersRoot.innerHTML = "";
-
-    let users = [];
-    try {
-      users = await loadUsers();
-    } catch (error) {
-      console.error("Failed to load users:", error);
-    }
-
-    if (!users.length) {
-      usersRoot.innerHTML = `<p>No users found.</p>`;
-      return;
-    }
-
-    const currentUsername = getLoggedInUsername();
-
-    users.forEach(user => {
-      const row = document.createElement("div");
-      row.className = "userRow";
-      row.innerHTML = `
-        <div>
-          <strong>${user.username}</strong>
-          <span>(${user.role})</span>
-          ${user.active === false ? `<span> - inactive</span>` : ``}
-          ${user.username === currentUsername ? `<span> - current</span>` : ``}
-        </div>
-        <div class="formButtons">
-          <button type="button" data-user-toggle="${user.username}">
-            ${user.active === false ? "Activate" : "Deactivate"}
-          </button>
-          <button type="button" data-user-delete="${user.username}">
-            Delete
-          </button>
-        </div>
-      `;
-      usersRoot.appendChild(row);
-    });
-
-    usersRoot.querySelectorAll("[data-user-toggle]").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const username = btn.getAttribute("data-user-toggle");
-        const currentUsers = await loadUsers();
-
-        const updatedUsers = currentUsers.map(user =>
-          user.username === username
-            ? { ...user, active: !user.active }
-            : user
-        );
-
-        const activeAdmins = updatedUsers.filter(
-          user => user.active && user.role === "admin"
-        );
-
-        if (!activeAdmins.length) {
-          await showMessageModal(
-            "Action Blocked",
-            "At least one active admin user is required."
-          );
-          return;
-        }
-
-        try {
-          await saveUsers(updatedUsers);
-          await renderUsers();
-        } catch (error) {
-          console.error("Failed to toggle user state:", error);
-          await showMessageModal("Save Failed", "Unable to update user.");
-        }
-      });
-    });
-
-    usersRoot.querySelectorAll("[data-user-delete]").forEach(btn => {
-      btn.addEventListener("click", async () => {
-        const username = btn.getAttribute("data-user-delete");
-
-        const confirmed = await showAppModal({
-          title: "Delete User",
-          message: `Delete user "${username}"?`,
-          confirmText: "Delete",
-          cancelText: "Cancel",
-          danger: true,
-          showCancel: true
-        });
-
-        if (!confirmed) return;
-
-        const currentUsers = await loadUsers();
-        const updatedUsers = currentUsers.filter(user => user.username !== username);
-
-        const activeAdmins = updatedUsers.filter(
-          user => user.active && user.role === "admin"
-        );
-
-        if (!activeAdmins.length) {
-          await showMessageModal(
-            "Action Blocked",
-            "At least one active admin user is required."
-          );
-          return;
-        }
-
-        try {
-          await saveUsers(updatedUsers);
-          await renderUsers();
-        } catch (error) {
-          console.error("Failed to delete user:", error);
-          await showMessageModal("Delete Failed", "Unable to delete user.");
-        }
-      });
-    });
-  }
-
-  async function addUserFromForm() {
-    const username = normalizeText(
-      document.getElementById("newUserUsernameInput")?.value
-    );
-    const password = normalizeText(
-      document.getElementById("newUserPasswordInput")?.value
-    );
-    const role =
-      document.getElementById("newUserRoleSelect")?.value === "admin"
-        ? "admin"
-        : "user";
+    const currentPassword = normalizeText(currentInput?.value || "");
+    const newPassword = normalizeText(newInput?.value || "");
+    const confirmPassword = normalizeText(confirmInput?.value || "");
 
     if (!username) {
-      await showMessageModal("Missing Username", "Enter a username.");
+      await showMessageModal("Password Change Failed", "No logged-in user found.");
       return;
     }
 
-    if (!password) {
-      await showMessageModal("Missing Password", "Enter a password.");
+    if (!currentPassword || !newPassword || !confirmPassword) {
+      await showMessageModal("Missing Information", "Please fill out all password fields.");
       return;
     }
 
-    const users = await loadUsers();
+    if (newPassword !== confirmPassword) {
+      await showMessageModal("Password Mismatch", "New password and confirmation do not match.");
+      return;
+    }
 
-    if (users.some(user => user.username === username)) {
-      await showMessageModal("Duplicate User", "That username already exists.");
+    if (newPassword.length < 3) {
+      await showMessageModal("Password Too Short", "Password must be at least 3 characters.");
       return;
     }
 
     try {
-      await saveUsers([
-        ...users,
-        {
-          id: username,
-          username,
-          password,
-          role,
-          active: true
-        }
-      ]);
+      await updateUserPassword(username, newPassword);
+      closePasswordModal();
+      await showMessageModal("Password Updated", "Your password was updated successfully.");
     } catch (error) {
-      console.error("Failed to add user:", error);
-      await showMessageModal("Save Failed", "Unable to add user.");
+      console.error("Failed to update password:", error);
+      await showMessageModal(
+        "Password Change Failed",
+        `Unable to update password: ${error?.message || error}`
+      );
+    }
+  }
+
+  async function logoutUser() {
+    const confirmed = await showConfirmModal(
+      "Logout",
+      "Are you sure you want to log out?",
+      "Logout",
+      "Cancel",
+      false
+    );
+
+    if (!confirmed) return;
+
+    clearLoggedIn();
+    window.location.reload();
+  }
+
+  async function openServiceTemplateWindow() {
+    if (
+      !(await requirePermission(
+        canAccessServices,
+        "Services Access Required",
+        "You do not have permission to access Services."
+      ))
+    ) {
       return;
     }
 
-    const usernameInput = document.getElementById("newUserUsernameInput");
-    const passwordInput = document.getElementById("newUserPasswordInput");
-    const roleSelect = document.getElementById("newUserRoleSelect");
+    try {
+      const url = "service-template.html";
 
-    if (usernameInput) usernameInput.value = "";
-    if (passwordInput) passwordInput.value = "";
-    if (roleSelect) roleSelect.value = "user";
+      if (window.electronAPI?.openWindow) {
+        window.electronAPI.openWindow({
+          url,
+          title: "Service Templates",
+          width: 1400,
+          height: 900
+        });
+        return;
+      }
 
-    await renderUsers();
+      window.open(
+        url,
+        "_blank",
+        "width=1400,height=900,resizable=yes,scrollbars=yes"
+      );
+    } catch (error) {
+      console.error("Failed to open service template window:", error);
+      await showMessageModal(
+        "Open Services Failed",
+        `Unable to open Services: ${error?.message || error}`
+      );
+    }
+  }
+
+  async function openUserManagementWindow() {
+    if (
+      !(await requirePermission(
+        canAccessUserManagement,
+        "User Management Required",
+        "You do not have permission to manage users."
+      ))
+    ) {
+      return;
+    }
+
+    try {
+      const url = "users.html";
+
+      if (window.electronAPI?.openWindow) {
+        window.electronAPI.openWindow({
+          url,
+          title: "User Management",
+          width: 1200,
+          height: 850
+        });
+        return;
+      }
+
+      window.open(
+        url,
+        "_blank",
+        "width=1200,height=850,resizable=yes,scrollbars=yes"
+      );
+    } catch (error) {
+      console.error("Failed to open user management window:", error);
+      await showMessageModal(
+        "Open User Management Failed",
+        `Unable to open User Management: ${error?.message || error}`
+      );
+    }
   }
 
   function bindEvents() {
-    const manageUsersBtn = document.getElementById("manageUsersBtn");
-    const addUserBtn = document.getElementById("addUserBtn");
-    const refreshUsersBtn = document.getElementById("refreshUsersBtn");
+    if (eventsBound) return;
+    eventsBound = true;
+
+    const settingsBtn =
+      dom.openSettingsBtn ||
+      document.getElementById("openSettingsBtn");
+
+    const servicesBtn =
+      dom.openServicesBtn ||
+      document.getElementById("openServicesBtn");
+
+    const usersBtn =
+      dom.settingsUsersBtn ||
+      document.getElementById("settingsUsersBtn") ||
+      dom.manageUsersBtn ||
+      document.getElementById("manageUsersBtn");
+
+    const passwordBtn =
+      dom.settingsPasswordBtn ||
+      document.getElementById("settingsPasswordBtn") ||
+      dom.changePasswordBtn ||
+      document.getElementById("changePasswordBtn");
 
     if (dom.settingsMenuBtn && dom.settingsDropdown) {
       dom.settingsMenuBtn.addEventListener("click", event => {
+        event.preventDefault();
         event.stopPropagation();
         dom.settingsDropdown.classList.toggle("show");
       });
     }
 
-    if (dom.openSettingsBtn) {
-      dom.openSettingsBtn.addEventListener("click", () => {
-        openSettingsPanel();
-      });
-    }
-
-    if (manageUsersBtn) {
-      manageUsersBtn.addEventListener("click", () => {
-        openSettingsPanel();
-        if (dom.settingsDropdown) {
-          dom.settingsDropdown.classList.remove("show");
-        }
-      });
-    }
-
-    if (dom.openServicesBtn) {
-      dom.openServicesBtn.addEventListener("click", event => {
+    if (settingsBtn) {
+      settingsBtn.addEventListener("click", async event => {
         event.preventDefault();
         event.stopPropagation();
 
@@ -539,8 +553,43 @@ export async function initSettings() {
           dom.settingsDropdown.classList.remove("show");
         }
 
-        closeAllSettingsPanels();
-        openServiceTemplateWindow();
+        if (
+          !(await requirePermission(
+            canAccessSettings,
+            "Settings Access Required",
+            "You do not have permission to open Settings."
+          ))
+        ) {
+          return;
+        }
+
+        openSettingsPanel();
+      });
+    }
+
+    if (servicesBtn) {
+      servicesBtn.addEventListener("click", async event => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (dom.settingsDropdown) {
+          dom.settingsDropdown.classList.remove("show");
+        }
+
+        await openServiceTemplateWindow();
+      });
+    }
+
+    if (usersBtn) {
+      usersBtn.addEventListener("click", async event => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        if (dom.settingsDropdown) {
+          dom.settingsDropdown.classList.remove("show");
+        }
+
+        await openUserManagementWindow();
       });
     }
 
@@ -554,8 +603,10 @@ export async function initSettings() {
       });
     }
 
-    if (dom.changePasswordBtn) {
-      dom.changePasswordBtn.addEventListener("click", openPasswordModal);
+    if (passwordBtn) {
+      passwordBtn.addEventListener("click", () => {
+        openPasswordModal();
+      });
     }
 
     if (dom.closePasswordModalBtn) {
@@ -572,18 +623,6 @@ export async function initSettings() {
       dom.logoutBtn.addEventListener("click", logoutUser);
     }
 
-    if (addUserBtn) {
-      addUserBtn.addEventListener("click", () => {
-        addUserFromForm();
-      });
-    }
-
-    if (refreshUsersBtn) {
-      refreshUsersBtn.addEventListener("click", () => {
-        renderUsers();
-      });
-    }
-
     document.addEventListener("click", event => {
       if (
         dom.settingsDropdown &&
@@ -597,6 +636,10 @@ export async function initSettings() {
       if (dom.passwordModal && event.target === dom.passwordModal) {
         closePasswordModal();
       }
+
+      if (dom.appModal && event.target === dom.appModal && appModalResolver) {
+        closeMessageModal(false);
+      }
     });
 
     document.addEventListener("keydown", event => {
@@ -608,10 +651,13 @@ export async function initSettings() {
       }
 
       if (dom.appModal?.classList.contains("show") && appModalResolver) {
-        const resolver = appModalResolver;
-        appModalResolver = null;
-        dom.appModal.classList.remove("show");
-        resolver(false);
+        closeMessageModal(false);
+        return;
+      }
+
+      const panel = dom.settingsPanel || byId("settingsPanel");
+      if (panel?.classList.contains("show") || panel?.style.display === "block") {
+        closeSettingsPanel();
       }
     });
   }
@@ -625,7 +671,7 @@ export async function initSettings() {
     populateSettingsForm,
     openSettingsPanel,
     closeSettingsPanel,
-    getSettings,
-    renderUsers
+    openUserManagementWindow,
+    getSettings
   };
 }

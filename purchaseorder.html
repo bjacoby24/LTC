@@ -15,7 +15,7 @@
       </div>
 
       <div class="poHeaderButtons">
-        <div id="poSaveStatus" class="saveStatus">Saved</div>
+        <div id="poSaveStatus" class="saveStatus saved">Saved</div>
         <button id="printPOBtn" type="button">Print</button>
         <button id="deletePOBtn" type="button" class="danger">Delete</button>
         <button id="savePOBtn" type="button" class="primaryBtn">Save Purchase Order</button>
@@ -27,7 +27,7 @@
         <h3>Purchase Order Details</h3>
 
         <label for="poNumber">PO #</label>
-        <input id="poNumber" placeholder="PO #" readonly />
+        <input id="poNumber" placeholder="PO #" />
 
         <label for="vendor">Vendor</label>
         <input id="vendor" placeholder="Vendor" />
@@ -83,26 +83,29 @@
     <div class="poExtraCharges">
       <div class="poChargeField">
         <label for="taxAmount">Tax</label>
-        <input id="taxAmount" type="number" step="0.01" value="0" />
+        <input id="taxAmount" type="number" step="0.01" min="0" value="0" />
       </div>
 
       <div class="poChargeField">
         <label for="shippingAmount">Shipping</label>
-        <input id="shippingAmount" type="number" step="0.01" value="0" />
+        <input id="shippingAmount" type="number" step="0.01" min="0" value="0" />
       </div>
     </div>
 
     <div class="poLowerGrid">
       <div class="poAttachmentsSection">
         <div class="poItemsHeader">
-          <h3>Attachments</h3>
+          <div>
+            <h3>Attachments</h3>
+            <p class="poSubtitle">Attachments are stored on the local Maintenance drive.</p>
+          </div>
           <button id="addPOAttachmentBtn" type="button">+ Add Attachment</button>
         </div>
 
         <input id="poAttachmentInput" type="file" multiple hidden />
 
         <div id="poAttachmentsEmpty" class="attachmentPlaceholder">
-          No attachments added yet.
+          Attachments can only be added by an admin on the designated computer.
         </div>
 
         <div id="poAttachmentList" class="attachmentList"></div>
@@ -138,6 +141,6 @@
     </div>
   </div>
 
-<script type="module" src="purchaseorder.js"></script>
+  <script type="module" src="purchaseorder.js"></script>
 </body>
 </html>

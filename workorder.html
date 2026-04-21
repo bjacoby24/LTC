@@ -12,7 +12,7 @@
 
     <header class="woTopbar">
       <div class="woTopbarLeft">
-        <button id="backBtn" type="button" class="iconBtn">←</button>
+        <button id="backBtn" type="button" class="iconBtn" aria-label="Go back">←</button>
         <div>
           <h1 id="woNumberText">WO-0001</h1>
           <p class="woSubLabel">Work Order</p>
@@ -20,7 +20,7 @@
       </div>
 
       <div class="woTopbarRight">
-        <div class="statusPills">
+        <div class="statusPills" aria-label="Work order status">
           <button type="button" class="statusPill" data-status-value="Open">Open</button>
           <button type="button" class="statusPill" data-status-value="In Progress">In Progress</button>
           <button type="button" class="statusPill" data-status-value="Manager Review">Manager Review</button>
@@ -45,16 +45,19 @@
             </div>
           </div>
 
-          <div class="formGrid formGrid3">
+          <div class="formGrid formGrid3 workOrderDetailsGrid">
             <div class="fieldGroup">
               <label for="woEquipmentNumber">Equipment</label>
-              <input id="woEquipmentNumber" placeholder="Enter equipment number" />
+              <input id="woEquipmentNumber" placeholder="Enter equipment number" autocomplete="off" />
               <div id="equipmentMatchInfo" class="fieldHelpText">Enter an equipment number.</div>
             </div>
 
             <div class="fieldGroup">
               <label for="woAssignee">Assignee</label>
-              <input id="woAssignee" placeholder="Assign technician" />
+              <select id="woAssignee" multiple size="6"></select>
+              <div id="woAssigneeHelp" class="fieldHelpText">
+                Hold Ctrl (Windows) to choose multiple assignees.
+              </div>
             </div>
 
             <div class="fieldGroup">
@@ -63,28 +66,16 @@
             </div>
 
             <div class="fieldGroup">
-              <label for="woType">Type</label>
-              <input id="woType" placeholder="Type" />
-            </div>
-
-            <div class="fieldGroup">
               <label for="repairLocation">Repair Location</label>
-              <input id="repairLocation" placeholder="Repair location" />
+              <input id="repairLocation" placeholder="Repair location" autocomplete="off" />
             </div>
 
             <div class="fieldGroup">
-              <label for="meter">Meter</label>
-              <input id="meter" placeholder="Meter" />
-            </div>
-
-            <div class="fieldGroup">
-              <label for="woDate">Opened</label>
-              <input id="woDate" type="date" />
-            </div>
-
-            <div class="fieldGroup">
-              <label for="woClosed">Closed</label>
-              <input id="woClosed" type="date" />
+              <label for="woServiceTaskSelect">Scheduled Service</label>
+              <select id="woServiceTaskSelect" multiple size="6"></select>
+              <div id="woServiceTaskHelp" class="fieldHelpText">
+                Select equipment first. Hold Ctrl (Windows) to choose multiple services.
+              </div>
             </div>
 
             <div class="fieldGroup">
@@ -103,7 +94,116 @@
             <button id="addTaskBtn" type="button" class="primaryBtn">+ Add Task</button>
           </div>
 
-          <div id="tasksContainer" class="tasksContainer"></div>
+          <div id="tasksContainer" class="tasksContainer" aria-live="polite"></div>
+
+          <template id="taskCardTemplate">
+            <div class="taskCard" data-task-id="">
+              <div class="taskCardHeader">
+                <div class="taskTitleBlock">
+                  <span class="taskIndex">Task 1</span>
+                  <span class="taskTitle">Service Task 1</span>
+                </div>
+
+                <div class="taskActions">
+                  <button type="button" class="removeTaskBtn">Remove Task</button>
+                </div>
+              </div>
+
+              <div class="taskGrid">
+                <div class="fieldGroup">
+                  <label>Task</label>
+                  <input class="taskName" placeholder="Task name" />
+                </div>
+
+                <div class="fieldGroup">
+                  <label>Labor Hours</label>
+                  <input class="taskLaborHours" type="number" min="0" step="0.01" value="0" />
+                </div>
+
+                <div class="fieldGroup">
+                  <label>Labor Rate</label>
+                  <input class="taskLaborRate" type="number" min="0" step="0.01" value="0" />
+                </div>
+
+                <div class="fieldGroup">
+                  <label>Task Total</label>
+                  <input class="taskTotalDisplay" value="$0.00" disabled />
+                </div>
+
+                <div class="fieldGroup taskDescriptionWrap">
+                  <label>Description</label>
+                  <textarea class="taskDescription" placeholder="Describe work performed"></textarea>
+                </div>
+              </div>
+
+              <div class="inlineSectionHeader">
+                <h3>Parts</h3>
+                <button type="button" class="primaryBtn addTaskPartBtn">+ Add Part</button>
+              </div>
+
+              <div class="tableWrap">
+                <table class="taskPartsTable">
+                  <thead>
+                    <tr>
+                      <th>Part Name</th>
+                      <th>Part #</th>
+                      <th>Qty</th>
+                      <th>Unit Cost</th>
+                      <th>Total</th>
+                      <th></th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
+              </div>
+            </div>
+          </template>
+
+          <template id="taskPartRowTemplate">
+            <tr class="taskPartRow" data-part-id="" data-inventory-id="">
+              <td>
+                <div class="partFieldWrap">
+                  <input
+                    class="partName"
+                    placeholder="Part name"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                  <div class="partAutocomplete" hidden>
+                    <div class="partAutocompleteList" role="listbox" aria-label="Part suggestions"></div>
+                  </div>
+                </div>
+              </td>
+
+              <td>
+                <div class="partFieldWrap">
+                  <input
+                    class="partNumber"
+                    placeholder="Part #"
+                    autocomplete="off"
+                    spellcheck="false"
+                  />
+                  <div class="partAutocomplete" hidden>
+                    <div class="partAutocompleteList" role="listbox" aria-label="Part suggestions"></div>
+                  </div>
+                </div>
+              </td>
+
+              <td>
+                <input class="partQty" type="number" min="0" step="1" value="0" />
+              </td>
+
+              <td>
+                <input class="partCost" type="number" min="0" step="0.01" value="0" />
+              </td>
+
+              <td class="partLineTotal">$0.00</td>
+
+              <td>
+                <button type="button" class="removePartBtn">Remove</button>
+              </td>
+            </tr>
+          </template>
         </section>
 
         <section class="card">
@@ -117,6 +217,7 @@
           <div class="cardHeader">
             <div>
               <h2>Files</h2>
+              <p class="sectionSubtext">Attachments are stored on the local Maintenance drive.</p>
             </div>
           </div>
 
@@ -125,10 +226,10 @@
               <button type="button" id="addAttachmentBtn" class="primaryBtn">+ Add Attachment</button>
             </div>
 
-            <input id="attachmentInput" type="file" multiple style="display: none;" />
+            <input id="attachmentInput" type="file" multiple hidden />
 
             <div id="attachmentHelpText" class="fieldHelpText">
-              Upload photos, PDFs, or documents. Large files may not save well in local storage.
+              Attachments can only be added by an admin on the designated computer.
             </div>
 
             <div id="attachmentList" class="tasksContainer"></div>
@@ -164,15 +265,44 @@
   </div>
 
   <div id="attachmentPreviewModal" class="attachmentPreviewModal">
-  <div class="attachmentPreviewDialog">
-    <div class="attachmentPreviewHeader">
-      <h3 id="attachmentPreviewTitle">Preview</h3>
-      <button type="button" id="closeAttachmentPreviewBtn" class="iconBtn">×</button>
-    </div>
+    <div class="attachmentPreviewDialog">
+      <div class="attachmentPreviewHeader">
+        <h3 id="attachmentPreviewTitle">Attachment</h3>
+        <button
+          type="button"
+          id="closeAttachmentPreviewBtn"
+          class="iconBtn"
+          aria-label="Close preview"
+        >
+          ×
+        </button>
+      </div>
 
-    <div id="attachmentPreviewBody" class="attachmentPreviewBody"></div>
+      <div id="attachmentPreviewBody" class="attachmentPreviewBody"></div>
+    </div>
   </div>
-</div>
+
+  <div id="woAppModal" class="woAppModal">
+    <div class="woAppModalCard" role="dialog" aria-modal="true" aria-labelledby="woAppModalTitle">
+      <div class="woAppModalHeader">
+        <h3 id="woAppModalTitle">Message</h3>
+        <button
+          type="button"
+          id="woAppModalCloseBtn"
+          class="iconBtn"
+          aria-label="Close message"
+        >
+          ×
+        </button>
+      </div>
+
+      <div class="woAppModalBody">
+        <p id="woAppModalMessage"></p>
+      </div>
+
+      <div id="woAppModalActions" class="woAppModalActions"></div>
+    </div>
+  </div>
 
   <script type="module" src="workorder.js"></script>
 </body>
