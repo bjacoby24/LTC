@@ -1,3 +1,4 @@
+console.log("electronAPI available:", !!window.electronAPI, window.electronAPI);
 import { normalizeText, formatMoney, makeId } from "./js/utils.js";
 import {
   loadWorkOrders,
