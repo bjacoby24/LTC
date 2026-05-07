@@ -1939,53 +1939,295 @@ export async function initInventory() {
     openInventoryBarcodePreview();
   }
 
-  function printInventoryBarcodePreview() {
-    const items = getSelectedBarcodeItems();
+  let inventoryBarcodePrintInProgress = false;
 
-    if (!items.length) {
-      showMessageModal("Print Barcodes", "Select one or more inventory items first.");
-      return;
-    }
+function getBarcodePrintSize() {
+  const size = byId("inventoryBarcodeLabelSize")?.value || "2x1";
 
-    renderInventoryBarcodePreview();
-    window.print();
+  if (size === "3x1") {
+    return {
+      width: "3in",
+      height: "1in",
+      labelClass: "barcodeSize-3x1"
+    };
   }
 
-  async function refreshInventoryFromRemote() {
-    try {
-      await hydrateInventory();
-
-      if (editingInventoryId != null) {
-        const stillExists = inventory.some(
-          item => String(item.id) === String(editingInventoryId)
-        );
-
-        if (!stillExists) {
-          closeInventoryPanel();
-        }
-      }
-
-      if (viewingInventoryId != null) {
-        const item = getInventoryById(viewingInventoryId);
-
-        if (!item) {
-          closeInventoryProfilePanel();
-        } else if (dom.inventoryProfilePanel?.classList.contains("show")) {
-          fillInventoryProfile(item);
-        }
-      }
-
-      selectedInventoryIds = new Set(
-        [...selectedInventoryIds].filter(id =>
-          inventory.some(item => String(item.id) === String(id))
-        )
-      );
-
-      renderInventoryGrid();
-    } catch (error) {
-      console.error("Inventory remote refresh failed:", error);
-    }
+  if (size === "4x2") {
+    return {
+      width: "4in",
+      height: "2in",
+      labelClass: "barcodeSize-4x2"
+    };
   }
+
+  return {
+    width: "2in",
+    height: "1in",
+    labelClass: "barcodeSize-2x1"
+  };
+}
+
+function printInventoryBarcodePreview() {
+  const items = getSelectedBarcodeItems();
+
+  if (!items.length) {
+    showMessageModal("Print Barcodes", "Select one or more inventory items first.");
+    return;
+  }
+
+  if (inventoryBarcodePrintInProgress) {
+    return;
+  }
+
+  inventoryBarcodePrintInProgress = true;
+
+  renderInventoryBarcodePreview();
+
+  const preview = byId("inventoryBarcodePreview");
+  const copies = Math.max(1, Number(byId("inventoryBarcodeCopiesInput")?.value || 1));
+  const expectedLabelCount = items.length * copies;
+  const { width, height, labelClass } = getBarcodePrintSize();
+
+  if (!preview) {
+    inventoryBarcodePrintInProgress = false;
+    return;
+  }
+
+  const previewItems = Array.from(preview.querySelectorAll(".barcodePreviewItem"));
+
+  if (previewItems.length !== expectedLabelCount) {
+    inventoryBarcodePrintInProgress = false;
+    showMessageModal(
+      "Barcode Count Error",
+      `Expected ${expectedLabelCount} label${expectedLabelCount === 1 ? "" : "s"}, but the preview contains ${previewItems.length}. Refresh the preview and try again.`
+    );
+    return;
+  }
+
+  const labelsHtml = previewItems
+    .slice(0, expectedLabelCount)
+    .map(item => item.outerHTML)
+    .join("");
+
+  const printWindow = window.open("", "_blank", "width=500,height=500");
+
+  if (!printWindow) {
+    inventoryBarcodePrintInProgress = false;
+    showMessageModal(
+      "Print Barcodes",
+      "The barcode print window was blocked. Allow popups for this app and try again."
+    );
+    return;
+  }
+
+  printWindow.document.open();
+  printWindow.document.write(`
+    <!DOCTYPE html>
+    <html>
+      <head>
+        <title>Inventory Barcodes</title>
+        <style>
+          @page {
+            size: ${width} ${height};
+            margin: 0;
+          }
+
+          html,
+          body {
+            margin: 0;
+            padding: 0;
+            width: ${width};
+            background: #ffffff;
+            font-family: Arial, Helvetica, sans-serif;
+          }
+
+          * {
+            box-sizing: border-box;
+          }
+
+          .barcodePreviewSheet {
+            display: block;
+            margin: 0;
+            padding: 0;
+            width: ${width};
+            background: #ffffff;
+          }
+
+          .barcodePreviewItem {
+            width: ${width};
+            height: ${height};
+            margin: 0;
+            padding: 0;
+            display: block;
+            overflow: hidden;
+            page-break-after: always;
+            break-after: page;
+            background: #ffffff;
+            border: none;
+            box-shadow: none;
+          }
+
+          .barcodePreviewItem:last-child {
+            page-break-after: auto;
+            break-after: auto;
+          }
+
+          .inventoryBarcodeLabel {
+            width: 100%;
+            height: 100%;
+            padding: 0.075in;
+            color: #000000;
+            background: #ffffff;
+            font-family: Arial, Helvetica, sans-serif;
+            display: flex;
+            flex-direction: column;
+            justify-content: space-between;
+          }
+
+          .barcodeLabelTop {
+            display: flex;
+            justify-content: space-between;
+            gap: 6px;
+            align-items: flex-start;
+          }
+
+          .barcodePartName {
+            font-size: 8pt;
+            font-weight: 900;
+            line-height: 1.05;
+            max-height: 18pt;
+            overflow: hidden;
+            color: #000000;
+          }
+
+          .barcodePrice {
+            font-size: 8pt;
+            font-weight: 900;
+            white-space: nowrap;
+            color: #000000;
+          }
+
+          .barcodeMetaRow {
+            display: flex;
+            justify-content: space-between;
+            gap: 6px;
+            font-size: 6.5pt;
+            line-height: 1.1;
+            color: #000000;
+          }
+
+          .barcodeMetaRow span {
+            font-weight: 700;
+          }
+
+          .barcodeMetaRow strong {
+            font-weight: 900;
+            text-align: right;
+            overflow: hidden;
+            text-overflow: ellipsis;
+            white-space: nowrap;
+          }
+
+          .barcodeImageWrap {
+            height: 0.32in;
+            width: 100%;
+            overflow: hidden;
+          }
+
+          .barcodeSvg {
+            width: 100%;
+            height: 100%;
+            display: block;
+          }
+
+          .barcodeHumanText {
+            font-size: 7pt;
+            font-weight: 900;
+            letter-spacing: 0.06em;
+            text-align: center;
+            line-height: 1;
+            color: #000000;
+          }
+
+          .barcodeSize-3x1 .barcodePartName {
+            font-size: 9pt;
+          }
+
+          .barcodeSize-3x1 .barcodePrice {
+            font-size: 9pt;
+          }
+
+          .barcodeSize-3x1 .barcodeMetaRow {
+            font-size: 7pt;
+          }
+
+          .barcodeSize-3x1 .barcodeImageWrap {
+            height: 0.34in;
+          }
+
+          .barcodeSize-3x1 .barcodeHumanText {
+            font-size: 7.5pt;
+          }
+
+          .barcodeSize-4x2 .inventoryBarcodeLabel {
+            padding: 0.12in;
+          }
+
+          .barcodeSize-4x2 .barcodePartName {
+            font-size: 13pt;
+            max-height: 30pt;
+          }
+
+          .barcodeSize-4x2 .barcodePrice {
+            font-size: 12pt;
+          }
+
+          .barcodeSize-4x2 .barcodeMetaRow {
+            font-size: 10pt;
+          }
+
+          .barcodeSize-4x2 .barcodeImageWrap {
+            height: 0.65in;
+          }
+
+          .barcodeSize-4x2 .barcodeHumanText {
+            font-size: 11pt;
+          }
+        </style>
+      </head>
+
+      <body>
+        <div class="barcodePreviewSheet ${labelClass}">
+          ${labelsHtml}
+        </div>
+
+        <script>
+          let didPrint = false;
+
+          window.onload = function () {
+            setTimeout(function () {
+              if (didPrint) return;
+              didPrint = true;
+              window.print();
+            }, 300);
+          };
+
+          window.onafterprint = function () {
+            setTimeout(function () {
+              window.close();
+            }, 300);
+          };
+        </script>
+      </body>
+    </html>
+  `);
+
+  printWindow.document.close();
+
+  setTimeout(() => {
+    inventoryBarcodePrintInProgress = false;
+  }, 5000);
+}
 
   function bindEventsOnce() {
     if (eventsBound) return;

@@ -1,7 +1,7 @@
 {
   "name": "ltc-maintenance-program",
   "productName": "LTC Maintenance Program",
-  "version": "1.0.8",
+  "version": "1.0.9",
   "description": "LTC Maintenance Program desktop app",
   "author": "Brandon Jacoby",
   "main": "main.js",
