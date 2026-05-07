@@ -8,9 +8,9 @@
   --surface: #ffffff;
   --surface-soft: #fbfdff;
 
-  --sidebar: #183b6b;
-  --sidebar-deep: #112b4d;
-  --sidebar-border: rgba(255, 255, 255, 0.08);
+  --sidebar: rgba(0,99,65);
+  --sidebar-deep: rgba(0,99,65);
+  --sidebar-border: rgba(0,99,65);
 
   --text: #182534;
   --muted: #66778a;
@@ -33,7 +33,12 @@
   --radius-sm: 8px;
   --radius: 14px;
   --radius-lg: 18px;
+
+  --brand-green: rgb(0, 99, 65);
+  --brand-green-dark: rgb(0, 99, 65);
 }
+
+
 
 html,
 body {
@@ -69,9 +74,8 @@ body.theme-light {
   align-items: center;
   justify-content: center;
   padding: 24px;
-  background:
-    radial-gradient(circle at top left, rgba(47, 111, 237, 0.15), transparent 30%),
-    linear-gradient(180deg, #edf4fd 0%, #dfe9f4 100%);
+  background: rgba(0,99,65);
+    
 }
 
 .loginCard {
@@ -194,7 +198,7 @@ body.theme-light {
 }
 
 #sidebar a:hover {
-  background: rgba(255, 255, 255, 0.12);
+  background: rgba(0, 255, 255, 0.12);
   transform: translateX(2px);
 }
 
@@ -809,6 +813,64 @@ textarea {
 }
 
 /* GRID / TABLES */
+
+/* EQUIPMENT GRID COLUMN RESIZING */
+#equipmentTable {
+  table-layout: fixed;
+  width: max-content;
+  min-width: 100%;
+}
+
+#equipmentTable th,
+#equipmentTable td {
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+#equipmentTable th.resizableGridHeader {
+  position: sticky;
+  top: 0;
+  user-select: none;
+}
+
+#equipmentTable .gridColumnResizeHandle {
+  position: absolute;
+  top: 0;
+  right: -4px;
+  width: 8px;
+  height: 100%;
+  cursor: col-resize;
+  z-index: 12;
+}
+
+#equipmentTable .gridColumnResizeHandle::after {
+  content: "";
+  position: absolute;
+  top: 22%;
+  right: 3px;
+  width: 2px;
+  height: 56%;
+  border-radius: 999px;
+  background: rgba(47, 111, 237, 0.45);
+  opacity: 0;
+  transition: opacity 0.15s ease;
+}
+
+#equipmentTable th:hover .gridColumnResizeHandle::after,
+body.isResizingGridColumn #equipmentTable .gridColumnResizeHandle::after {
+  opacity: 1;
+}
+
+body.isResizingGridColumn {
+  cursor: col-resize;
+  user-select: none;
+}
+
+body.isResizingGridColumn * {
+  cursor: col-resize !important;
+}
+
 .gridWrap {
   overflow: auto;
   border: 1px solid var(--border);
@@ -1092,77 +1154,6 @@ textarea {
   color: var(--heading);
 }
 
-/* INVENTORY PROFILE MODAL */
-.inventoryProfileFullscreenCard {
-  width: min(1400px, calc(100vw - 32px));
-  height: calc(100vh - 32px);
-  max-height: calc(100vh - 32px);
-  display: flex;
-  flex-direction: column;
-  border-radius: 18px;
-}
-
-.inventoryInlineFooter {
-  padding: 0;
-  border-top: none;
-  justify-content: flex-end;
-  background: transparent;
-}
-
-#inventoryProfilePanel .appModalBody {
-  overflow-y: auto;
-  max-height: calc(90vh - 140px);
-}
-
-#inventoryProfilePanel .fieldGroup {
-  margin-bottom: 18px;
-}
-
-#inventoryProfileSubtitle {
-  margin-top: 4px;
-}
-
-.profileValue {
-  min-height: 44px;
-  padding: 11px 12px;
-  border: 1px solid var(--border);
-  border-radius: 10px;
-  background: #f9fbfe;
-  color: var(--text);
-  display: flex;
-  align-items: center;
-}
-
-.multilineValue {
-  align-items: flex-start;
-  white-space: pre-wrap;
-  min-height: 88px;
-}
-
-.inventoryAdminSection {
-  margin: 20px 0;
-  padding: 16px;
-  border: 1px solid #dbe7f5;
-  border-radius: 14px;
-  background: #f8fbff;
-}
-
-.inventoryAdminSection h3 {
-  margin-bottom: 14px;
-}
-
-#inventoryPurchaseHistoryTable,
-#inventoryIssueHistoryTable,
-#inventoryAdjustmentHistoryTable {
-  min-width: 100%;
-}
-
-#inventoryPurchaseHistoryTable .emptyStateCell,
-#inventoryIssueHistoryTable .emptyStateCell,
-#inventoryAdjustmentHistoryTable .emptyStateCell {
-  text-align: center;
-}
-
 /* MODALS */
 .appModal {
   position: fixed;
@@ -1241,6 +1232,365 @@ textarea {
   font-size: 13px;
 }
 
+/* INVENTORY PROFILE MODAL */
+.inventoryProfileFullscreenCard {
+  width: min(1400px, calc(100vw - 32px));
+  height: calc(100vh - 32px);
+  max-height: calc(100vh - 32px);
+  display: flex;
+  flex-direction: column;
+  border-radius: 18px;
+}
+
+.inventoryInlineFooter {
+  padding: 0;
+  border-top: none;
+  justify-content: flex-end;
+  background: transparent;
+}
+
+#inventoryProfilePanel .appModalBody {
+  flex: 1;
+  overflow-y: auto;
+  max-height: none;
+}
+
+#inventoryProfilePanel .fieldGroup {
+  margin-bottom: 18px;
+}
+
+#inventoryProfileSubtitle {
+  margin-top: 4px;
+}
+
+.profileValue {
+  min-height: 44px;
+  padding: 11px 12px;
+  border: 1px solid var(--border);
+  border-radius: 10px;
+  background: #f9fbfe;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+}
+
+.multilineValue {
+  align-items: flex-start;
+  white-space: pre-wrap;
+  min-height: 88px;
+}
+
+.inventoryAdminSection {
+  margin: 20px 0;
+  padding: 16px;
+  border: 1px solid #dbe7f5;
+  border-radius: 14px;
+  background: #f8fbff;
+}
+
+.inventoryAdminSection h3 {
+  margin-bottom: 14px;
+}
+
+#inventoryPurchaseHistoryTable,
+#inventoryIssueHistoryTable,
+#inventoryAdjustmentHistoryTable {
+  min-width: 100%;
+}
+
+#inventoryPurchaseHistoryTable .emptyStateCell,
+#inventoryIssueHistoryTable .emptyStateCell,
+#inventoryAdjustmentHistoryTable .emptyStateCell {
+  text-align: center;
+}
+
+/* PROFESSIONAL EQUIPMENT PROFILE MODAL */
+
+/* INLINE EQUIPMENT PROFILE EDITING */
+#equipmentProfileModal.profileEditing .profileValue {
+  background: #ffffff;
+  border-color: rgba(47, 111, 237, 0.55);
+  box-shadow: 0 0 0 4px rgba(47, 111, 237, 0.1);
+  cursor: text;
+}
+
+#equipmentProfileModal .profileValueEditing {
+  outline: none;
+}
+
+#equipmentProfileModal .profileValueEditing:focus {
+  border-color: rgba(47, 111, 237, 0.75);
+  box-shadow: 0 0 0 4px rgba(47, 111, 237, 0.16);
+}
+
+#cancelProfileEditBtn {
+  min-height: 44px;
+  padding: 12px 18px;
+  border-radius: 11px;
+  font-weight: 800;
+}
+
+#equipmentProfileModal #editProfileBtn.successBtn {
+  background: var(--success);
+  border-color: var(--success);
+}
+
+#equipmentProfileModal {
+  padding: 14px;
+  background: rgba(15, 23, 42, 0.54);
+  backdrop-filter: blur(2px);
+}
+
+#equipmentProfileModal .inventoryProfileFullscreenCard {
+  width: min(96vw, 1420px);
+  height: min(94vh, 940px);
+  max-height: min(94vh, 940px);
+  overflow: hidden;
+  border-radius: 20px;
+  border: 1px solid rgba(216, 226, 239, 0.95);
+  background: #f8fbff;
+  box-shadow: 0 28px 80px rgba(15, 35, 70, 0.34);
+}
+
+#equipmentProfileModal .appModalHeader {
+  position: sticky;
+  top: 0;
+  z-index: 8;
+  padding: 26px 28px 22px;
+  background: #ffffff;
+  border-bottom: 1px solid #dce6f2;
+}
+
+#equipmentProfileModal .appModalHeader h2 {
+  margin: 0;
+  font-size: 28px;
+  font-weight: 850;
+  color: #0b355f;
+  letter-spacing: -0.03em;
+}
+
+#equipmentProfileModal .appModalHeader .muted {
+  margin-top: 6px;
+  color: #5e7390;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+#equipmentProfileModal .profileHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+}
+
+#equipmentProfileModal #editProfileBtn {
+  min-height: 44px;
+  padding: 12px 18px;
+  border-radius: 11px;
+  font-weight: 800;
+  background: var(--primary);
+  border-color: var(--primary);
+  color: #ffffff;
+  box-shadow: 0 10px 20px rgba(47, 111, 237, 0.22);
+}
+
+#equipmentProfileModal #editProfileBtn:hover {
+  background: var(--primary-dark);
+  border-color: var(--primary-dark);
+}
+
+#equipmentProfileModal #closeEquipmentProfileBtn {
+  width: 44px;
+  height: 44px;
+  min-width: 44px;
+  padding: 0;
+  border-radius: 11px;
+  border: 1px solid #d7e2ef;
+  background: #ffffff;
+  color: #17395f;
+  font-size: 21px;
+  line-height: 1;
+  box-shadow: none;
+}
+
+#equipmentProfileModal #closeEquipmentProfileBtn:hover {
+  background: #f5f8fc;
+  border-color: #c8d7e8;
+}
+
+#equipmentProfileModal .appModalBody {
+  flex: 1;
+  overflow-y: auto;
+  max-height: none;
+  padding: 24px 28px 30px;
+  background:
+    radial-gradient(circle at top left, rgba(47, 111, 237, 0.06), transparent 26%),
+    linear-gradient(180deg, #f8fbff 0%, #eef4fb 100%);
+}
+
+#equipmentProfileModal .profileGrid {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(170px, 1fr));
+  gap: 12px;
+  margin-bottom: 16px;
+}
+
+#equipmentProfileModal .profileGrid .fieldGroup {
+  margin: 0;
+  gap: 6px;
+}
+
+#equipmentProfileModal .profileGrid .fieldGroup label {
+  margin: 0;
+  padding-left: 2px;
+  font-size: 11px;
+  font-weight: 850;
+  letter-spacing: 0.045em;
+  text-transform: uppercase;
+  color: #60748c;
+}
+
+#equipmentProfileModal .profileValue {
+  min-height: 68px;
+  padding: 14px 16px;
+  align-items: center;
+  border: 1px solid #dce6f2;
+  border-radius: 13px;
+  background: #ffffff;
+  color: #102a46;
+  font-size: 14px;
+  font-weight: 700;
+  box-shadow: 0 6px 18px rgba(20, 45, 80, 0.045);
+}
+
+#equipmentProfileModal #profileStatus {
+  color: var(--success);
+}
+
+#equipmentProfileModal .profileSummaryRow {
+  margin: 16px 0;
+}
+
+#equipmentProfileModal .profileSummaryRow .dashCard {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(160px, 1fr));
+  gap: 14px;
+  padding: 18px;
+  border: 1px solid #dce6f2;
+  border-radius: 17px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(20, 45, 80, 0.07);
+}
+
+#equipmentProfileModal .profileSummaryRow .dashCard h3 {
+  grid-column: 1 / -1;
+  margin: 0 0 2px;
+  font-size: 16px;
+  font-weight: 850;
+  color: #0b355f;
+  text-transform: uppercase;
+  letter-spacing: 0.035em;
+}
+
+#equipmentProfileModal .profileSummaryRow .statRow {
+  min-height: 76px;
+  padding: 16px 18px;
+  border: 1px solid #dce6f2;
+  border-radius: 14px;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+  box-shadow: 0 5px 16px rgba(20, 45, 80, 0.04);
+}
+
+#equipmentProfileModal .profileSummaryRow .statRow span {
+  font-size: 14px;
+  font-weight: 750;
+  color: #5e7390;
+}
+
+#equipmentProfileModal .profileSummaryRow .statRow strong {
+  font-size: 22px;
+  font-weight: 850;
+  color: #0b355f;
+}
+
+#equipmentProfileModal > .appModalCard > .appModalBody > .fieldGroup {
+  margin: 16px 0 0;
+  padding: 18px;
+  border: 1px solid #dce6f2;
+  border-radius: 17px;
+  background: #ffffff;
+  box-shadow: 0 10px 28px rgba(20, 45, 80, 0.07);
+}
+
+#equipmentProfileModal > .appModalCard > .appModalBody > .fieldGroup h3 {
+  margin: 0 0 14px;
+  font-size: 16px;
+  font-weight: 850;
+  color: #0b355f;
+  text-transform: uppercase;
+  letter-spacing: 0.035em;
+}
+
+#equipmentProfileModal .gridWrap {
+  border: 1px solid #dce6f2;
+  border-radius: 14px;
+  overflow: hidden;
+  background: #ffffff;
+  box-shadow: none;
+}
+
+#equipmentProfileModal .dataGrid {
+  min-width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+}
+
+#equipmentProfileModal .dataGrid thead th {
+  position: sticky;
+  top: 0;
+  z-index: 2;
+  padding: 14px 15px;
+  background: #f4f8fd;
+  color: #0b355f;
+  font-size: 12px;
+  font-weight: 850;
+  text-transform: none;
+  border-bottom: 1px solid #dce6f2;
+}
+
+#equipmentProfileModal .dataGrid tbody td {
+  padding: 20px 15px;
+  color: #52667d;
+  border-bottom: 1px solid #edf2f7;
+}
+
+#equipmentProfileModal .dataGrid tbody tr:hover {
+  background: #fbfdff;
+}
+
+#equipmentProfileModal .emptyCell {
+  text-align: center;
+  padding: 48px 18px !important;
+  color: #6a7f96;
+  font-size: 14px;
+}
+
+#equipmentProfileModal .smallBtn,
+#equipmentProfileModal [data-update-service-code] {
+  padding: 8px 11px;
+  border-radius: 9px;
+  font-size: 12px;
+  font-weight: 750;
+  background: #edf4ff;
+  color: var(--primary-dark);
+  border-color: #c8dbff;
+}
+
+#equipmentProfileModal .smallBtn:hover,
+#equipmentProfileModal [data-update-service-code]:hover {
+  background: #dceaff;
+  border-color: #aac8ff;
+}
+
 /* HELPERS */
 .centerCard {
   text-align: center;
@@ -1262,6 +1612,1069 @@ textarea {
   color: var(--warning);
 }
 
+/* =========================================================
+   PROFESSIONAL DASHBOARD REDESIGN
+   Paste this block right before the existing RESPONSIVE section
+========================================================= */
+
+.fleetDashboard {
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+}
+
+.fleetDashboardHeader {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 18px;
+  margin-bottom: 2px;
+}
+
+.fleetDashboardHeader h1 {
+  font-size: 32px;
+  font-weight: 850;
+  letter-spacing: -0.035em;
+  color: #102f55;
+}
+
+.fleetDashboardHeaderActions {
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  flex-wrap: wrap;
+}
+
+.dashboardSearchBox {
+  width: min(420px, 42vw);
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-height: 44px;
+  padding: 0 12px;
+  border: 1px solid #d8e3ef;
+  border-radius: 14px;
+  background: #ffffff;
+  box-shadow: 0 4px 14px rgba(15, 35, 70, 0.045);
+}
+
+.dashboardSearchBox span {
+  color: #6b7f96;
+  font-size: 18px;
+  line-height: 1;
+}
+
+.dashboardSearchBox input {
+  border: none;
+  box-shadow: none;
+  padding: 0;
+  min-height: 42px;
+  background: transparent;
+}
+
+.dashboardSearchBox input:focus {
+  border: none;
+  box-shadow: none;
+}
+
+/* KPI ROW */
+
+.dashboardKpiRow {
+  display: grid;
+  grid-template-columns: repeat(5, minmax(160px, 1fr));
+  gap: 14px;
+}
+
+.dashboardKpiCard {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  min-height: 112px;
+  padding: 18px;
+  border: 1px solid #dce6f2;
+  border-radius: 18px;
+  background: #ffffff;
+  box-shadow: 0 10px 26px rgba(15, 35, 70, 0.07);
+}
+
+.dashboardKpiIcon {
+  width: 46px;
+  height: 46px;
+  min-width: 46px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 15px;
+  font-size: 22px;
+}
+
+.dashboardKpiIcon.blue {
+  background: #eaf2ff;
+  color: #2766d8;
+}
+
+.dashboardKpiIcon.red {
+  background: #fff0f0;
+  color: #d94343;
+}
+
+.dashboardKpiIcon.purple {
+  background: #f1edff;
+  color: #6d50d8;
+}
+
+.dashboardKpiLabel {
+  color: #60748c;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.dashboardKpiValue {
+  margin-top: 2px;
+  font-size: 31px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: -0.04em;
+  color: #102f55;
+}
+
+.dashboardKpiHint {
+  margin-top: 6px;
+  color: #7a8ca1;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+/* DASHBOARD GRID / WIDGETS */
+
+.dashboardGrid.dashboardWidgetGrid {
+  gap: 16px;
+}
+
+.dashboardWidget {
+  border: 1px solid #dce6f2;
+  border-radius: 19px;
+  background: #ffffff;
+  box-shadow: 0 10px 26px rgba(15, 35, 70, 0.07);
+  overflow: hidden;
+}
+
+.widgetSpan8 {
+  grid-column: span 8;
+}
+
+.dashboardWidgetHeader {
+  min-height: 68px;
+  padding: 16px 18px;
+  border-bottom: 1px solid #edf2f7;
+  background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+}
+
+.dashboardWidgetTitleRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+}
+
+.dashboardWidgetTitleRow h3 {
+  font-size: 16px;
+  font-weight: 850;
+  color: #102f55;
+}
+
+.dashboardWidgetSubtitle {
+  margin: 4px 0 0;
+  color: #74869b;
+  font-size: 12px;
+  font-weight: 600;
+}
+
+.dashboardDragHandle {
+  color: #9aacbf;
+  font-size: 16px;
+  font-weight: 900;
+  cursor: grab;
+  letter-spacing: -4px;
+  user-select: none;
+}
+
+.dashboardWidgetMenuBtn {
+  min-width: 36px;
+  width: 36px;
+  height: 36px;
+  padding: 0;
+  border-radius: 11px;
+  border: 1px solid #dce6f2;
+  background: #ffffff;
+  color: #708399;
+  font-size: 18px;
+  font-weight: 850;
+  box-shadow: none;
+}
+
+.dashboardWidgetMenuBtn:hover {
+  background: #f6f9fd;
+  border-color: #c9d8e8;
+  box-shadow: none;
+}
+
+/* Hide old S / M / L resize buttons if any remain */
+
+.widgetResizeBtn,
+.dashboardWidgetActions .widgetResizeBtn {
+  display: none !important;
+}
+
+/* PM COMPLIANCE WIDGET */
+
+.dashboardPmCard {
+  min-height: 510px;
+}
+
+.dashboardChipRow {
+  padding: 12px 18px 0;
+}
+
+.dashboardChipRow + .dashboardChipRow {
+  padding-top: 10px;
+}
+
+.dashboardStatusChips,
+.dashboardFleetChips,
+.dueServicesTabs,
+.dueServicesCategories {
+  display: flex;
+  align-items: center;
+  flex-wrap: wrap;
+  gap: 9px;
+  padding: 0;
+}
+
+.dueServicesTabBtn,
+.dueServicesCategoryBtn {
+  min-height: 34px;
+  padding: 7px 12px;
+  border-radius: 999px;
+  border: 1px solid #dce6f2;
+  background: #ffffff;
+  color: #44576c;
+  font-size: 12px;
+  font-weight: 850;
+  box-shadow: none;
+}
+
+.dueServicesTabBtn:hover,
+.dueServicesCategoryBtn:hover {
+  background: #f7faff;
+  border-color: #c9d8e8;
+  box-shadow: none;
+}
+
+.dueServicesTabBtn.active,
+.dueServicesCategoryBtn.active {
+  background: #edf4ff;
+  border-color: #bdd3ff;
+  color: #2458bf;
+}
+
+.dueServicesCount {
+  min-width: 24px;
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: #eef3f8;
+  color: #60748c;
+  font-size: 11px;
+  font-weight: 850;
+}
+
+.dashboardTableWrap {
+  margin: 16px 18px 18px;
+  overflow: auto;
+  border: 1px solid #e1eaf4;
+  border-radius: 15px;
+  background: #ffffff;
+}
+
+.dashboardPmTable {
+  width: 100%;
+  border-collapse: separate;
+  border-spacing: 0;
+  min-width: 720px;
+}
+
+.dashboardPmTable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 1;
+  padding: 12px 14px;
+  background: #f6f9fd;
+  border-bottom: 1px solid #e1eaf4;
+  color: #60748c;
+  font-size: 12px;
+  font-weight: 850;
+  text-align: left;
+  white-space: nowrap;
+}
+
+.dashboardPmTable tbody td {
+  padding: 13px 14px;
+  border-bottom: 1px solid #edf2f7;
+  color: #23384f;
+  font-size: 13px;
+  vertical-align: middle;
+}
+
+.dashboardPmTable tbody tr:last-child td {
+  border-bottom: none;
+}
+
+.dashboardPmTable tbody tr:hover {
+  background: #fbfdff;
+}
+
+.dashboardPmTable tbody td strong {
+  color: #102f55;
+  font-weight: 850;
+}
+
+.dashboardTableSubtext {
+  margin-top: 3px;
+  color: #7a8ca1;
+  font-size: 12px;
+}
+
+.dashboardEmptyTableCell {
+  padding: 28px 14px !important;
+  text-align: center;
+  color: #74869b !important;
+  font-size: 13px;
+}
+
+.dashboardEmptyMessage {
+  padding: 16px 18px;
+}
+
+/* BADGES / STATUS PILLS */
+
+.badge {
+  min-width: auto;
+  padding: 5px 10px;
+  border-radius: 999px;
+  font-size: 11px;
+  font-weight: 850;
+  line-height: 1.15;
+}
+
+.badge.green {
+  background: #eaf8f0;
+  color: #16784a;
+}
+
+.badge.gray {
+  background: #eef2f6;
+  color: #617184;
+}
+
+.badge.gold,
+.badge.orange {
+  background: #fff5df;
+  color: #a56300;
+}
+
+.badge.blue {
+  background: #eaf2ff;
+  color: #2458bf;
+}
+
+.badge.red {
+  background: #fff0f0;
+  color: #c73636;
+}
+
+/* WEATHER */
+
+.dashboardWeatherCard {
+  min-height: 280px;
+}
+
+.weatherSummaryCard {
+  min-height: 212px;
+  padding: 18px;
+}
+
+.weatherCardTop {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+}
+
+.weatherIcon {
+  width: 58px;
+  height: 58px;
+  min-width: 58px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 18px;
+  background: #fff4d8;
+  color: #dc8a00;
+  font-size: 32px;
+}
+
+.weatherTitle {
+  color: #60748c;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.weatherTemp {
+  margin-top: 4px;
+  font-size: 38px;
+  line-height: 1;
+  font-weight: 900;
+  letter-spacing: -0.045em;
+  color: #102f55;
+}
+
+.weatherCond {
+  margin-top: 5px;
+  color: #2458bf;
+  font-size: 14px;
+  font-weight: 800;
+}
+
+.weatherToday {
+  margin-top: 18px;
+  padding-top: 15px;
+  border-top: 1px solid #edf2f7;
+  display: grid;
+  gap: 12px;
+}
+
+.weatherToday div {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+}
+
+.weatherToday strong {
+  color: #102f55;
+  font-size: 13px;
+}
+
+.weatherToday span {
+  color: #60748c;
+  font-size: 13px;
+  text-align: right;
+}
+
+/* STAT LISTS */
+
+.statList,
+.costSummary,
+.activityList {
+  padding: 14px 18px 18px;
+}
+
+.statRow,
+.costRow {
+  padding: 11px 0;
+  border-bottom: 1px solid #edf2f7;
+  font-size: 14px;
+}
+
+.statRow span:first-child,
+.costRow span:first-child {
+  color: #44576c;
+  font-weight: 700;
+}
+
+.statRow strong,
+.costRow strong {
+  color: #102f55;
+}
+
+/* OPEN ISSUES */
+
+.dashboardIssueList {
+  padding: 14px 18px 18px;
+  display: flex;
+  flex-direction: column;
+  gap: 10px;
+}
+
+.dashboardIssueRow {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-height: 42px;
+  padding: 10px 12px;
+  border: 1px solid #edf2f7;
+  border-radius: 13px;
+  background: #fbfdff;
+}
+
+.dashboardIssueRow span {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  color: #44576c;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.dashboardIssueRow strong {
+  min-width: 30px;
+  height: 26px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #eef3f8;
+  color: #102f55;
+  font-size: 12px;
+  font-weight: 900;
+}
+
+.dot {
+  width: 9px;
+  height: 9px;
+  display: inline-block;
+  border-radius: 999px;
+}
+
+.dot.red {
+  background: #db4a4a;
+}
+
+.dot.orange {
+  background: #e59d21;
+}
+
+.dot.blue {
+  background: #3b82f6;
+}
+
+/* RECENT ACTIVITY */
+
+.dashboardActivityList {
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+}
+
+.dashboardActivityRow {
+  display: grid;
+  grid-template-columns: 32px minmax(0, 1fr) auto;
+  align-items: flex-start;
+  gap: 10px;
+  padding: 12px 0;
+}
+
+.dashboardActivityIcon {
+  width: 28px;
+  height: 28px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  background: #edf4ff;
+  color: #2458bf;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.dashboardActivityContent {
+  min-width: 0;
+}
+
+.dueServicesRowTitle {
+  color: #102f55;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+.activityMeta {
+  color: #74869b;
+  font-size: 12px;
+}
+
+/* INVENTORY ALERTS */
+
+.dashboardInventoryList {
+  padding: 14px 18px 18px;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboardInventoryRow {
+  display: flex;
+  align-items: flex-start;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 12px 0;
+  border-bottom: 1px solid #edf2f7;
+}
+
+.dashboardInventoryRow:last-child {
+  border-bottom: none;
+}
+
+.dashboardInventoryRow strong {
+  color: #102f55;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+/* SERVICE COST CHART */
+
+.dashboardCostHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  padding: 16px 18px 0;
+  color: #60748c;
+  font-size: 13px;
+  font-weight: 750;
+}
+
+.dashboardCostHeader > div {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.dashboardCostHeader strong {
+  color: #102f55;
+  font-size: 18px;
+  font-weight: 900;
+}
+
+.chartLegendBox {
+  width: 12px;
+  height: 12px;
+  display: inline-block;
+  border-radius: 4px;
+  background: #2f6fed;
+}
+
+.dashboardCostChart {
+  height: 210px;
+  padding: 20px 18px 8px;
+  display: grid;
+  grid-template-columns: repeat(6, minmax(0, 1fr));
+  align-items: end;
+  gap: 14px;
+}
+
+.dashboardCostBarItem {
+  height: 100%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-end;
+  gap: 8px;
+}
+
+.dashboardCostBarTrack {
+  width: 100%;
+  height: 150px;
+  max-width: 44px;
+  display: flex;
+  align-items: flex-end;
+  justify-content: center;
+  border-radius: 12px;
+  background: #eef3f8;
+  overflow: hidden;
+}
+
+.dashboardCostBar {
+  width: 100%;
+  min-height: 8px;
+  border-radius: 12px 12px 0 0;
+  background: linear-gradient(180deg, #4c8dff 0%, #2f6fed 100%);
+}
+
+.dashboardCostBarLabel {
+  color: #74869b;
+  font-size: 11px;
+  font-weight: 750;
+  text-align: center;
+  white-space: nowrap;
+}
+
+.dashboardCostSummary {
+  display: grid;
+  grid-template-columns: repeat(4, minmax(0, 1fr));
+  gap: 0;
+  padding-top: 8px;
+  border-top: 1px solid #edf2f7;
+}
+
+.dashboardCostSummary .costRow {
+  flex-direction: column;
+  align-items: flex-start;
+  justify-content: center;
+  padding: 14px 18px;
+  border-bottom: none;
+  border-right: 1px solid #edf2f7;
+}
+
+.dashboardCostSummary .costRow:last-child {
+  border-right: none;
+}
+
+.dashboardCostSummary .costRow span {
+  color: #74869b;
+  font-size: 12px;
+}
+
+.dashboardCostSummary .costRow strong {
+  margin-top: 4px;
+  color: #102f55;
+  font-size: 16px;
+  font-weight: 900;
+}
+
+/* DASHBOARD EDITOR MODAL REFINEMENT */
+
+.dashboardEditorCard {
+  border-radius: 20px;
+}
+
+.dashboardEditorOption {
+  align-items: center;
+  border-color: #dce6f2;
+  background: #fbfdff;
+}
+
+.dashboardEditorOption:hover {
+  background: #f6f9fd;
+}
+
+.dashboardEditorOptionTitle {
+  color: #102f55;
+  font-weight: 850;
+}
+
+.dashboardEditorOptionHint {
+  color: #74869b;
+}
+
+/* DASHBOARD RESPONSIVE OVERRIDES */
+
+@media (max-width: 1400px) {
+  .dashboardKpiRow {
+    grid-template-columns: repeat(3, minmax(180px, 1fr));
+  }
+
+  .widgetSpan8 {
+    grid-column: span 12;
+  }
+}
+
+@media (max-width: 980px) {
+  .fleetDashboardHeader {
+    flex-direction: column;
+    align-items: stretch;
+  }
+
+  .fleetDashboardHeaderActions {
+    align-items: stretch;
+  }
+
+  .dashboardSearchBox {
+    width: 100%;
+  }
+
+  .dashboardKpiRow {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
+  }
+
+  .dashboardCostSummary {
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+
+  .dashboardCostSummary .costRow {
+    border-bottom: 1px solid #edf2f7;
+  }
+
+  .dashboardCostSummary .costRow:nth-child(2n) {
+    border-right: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboardKpiRow {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboardKpiCard {
+    min-height: 96px;
+  }
+
+  .dashboardCostChart {
+    gap: 8px;
+  }
+
+  .dashboardCostSummary {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboardCostSummary .costRow {
+    border-right: none;
+  }
+}
+
+/* Equipment Services table scroll inside widget */
+.dashboardPmCard {
+  display: flex;
+  flex-direction: column;
+  min-height: 510px;
+  max-height: 620px;
+}
+
+.dashboardPmCard .dashboardTableWrap {
+  flex: 1;
+  min-height: 0;
+  max-height: 360px;
+  overflow-y: auto;
+  overflow-x: auto;
+}
+
+.dashboardPmTable thead th {
+  position: sticky;
+  top: 0;
+  z-index: 3;
+}
+
+/* Optional: make the scroll area a little taller on large screens */
+@media (min-width: 1400px) {
+  .dashboardPmCard {
+    max-height: 680px;
+  }
+
+  .dashboardPmCard .dashboardTableWrap {
+    max-height: 420px;
+  }
+}
+
+/* Fixed professional dashboard layout */
+.dashboardWidget {
+  cursor: default;
+}
+
+.dashboardDragHandle {
+  display: none;
+}
+
+.dashboardWidget[draggable="true"] {
+  user-select: auto;
+}
+
+.dashboardGrid.dashboardWidgetGrid {
+  align-items: stretch;
+}
+
+.dashboardWidget {
+  height: 100%;
+}
+
+.dashboardPmCard {
+  min-height: 520px;
+  max-height: 620px;
+}
+
+.dashboardWeatherCard {
+  min-height: 520px;
+}
+
+.dashboardGrid .widgetSpan4 {
+  min-height: 285px;
+}
+
+.dashboardGrid .widgetSpan8 {
+  min-height: 520px;
+}
+
+.dashboardGrid .widgetSpan12 {
+  min-height: 520px;
+}
+
+/* 7-DAY WEATHER FORECAST WIDGET */
+
+.dashboardWeatherCard {
+  min-height: 520px;
+}
+
+.weatherSummaryCard {
+  padding: 18px;
+  min-height: 450px;
+}
+
+.weatherCurrentPanel {
+  display: flex;
+  align-items: center;
+  gap: 16px;
+  padding: 16px;
+  border: 1px solid #e1eaf4;
+  border-radius: 16px;
+  background:
+    radial-gradient(circle at top left, rgba(47, 111, 237, 0.12), transparent 36%),
+    linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+}
+
+.weatherCurrentIcon {
+  width: 72px;
+  height: 72px;
+  min-width: 72px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 22px;
+  background: #fff4d8;
+  font-size: 42px;
+}
+
+.weatherCurrentDetails {
+  min-width: 0;
+}
+
+.weatherWind {
+  margin-top: 6px;
+  color: #74869b;
+  font-size: 12px;
+  font-weight: 700;
+}
+
+.weatherForecastHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  margin: 16px 0 10px;
+}
+
+.weatherForecastHeader h4 {
+  margin: 0;
+  color: #102f55;
+  font-size: 14px;
+  font-weight: 850;
+}
+
+.weatherForecastGrid {
+  display: grid;
+  grid-template-columns: 1fr;
+  gap: 8px;
+  max-height: 300px;
+  overflow-y: auto;
+  padding-right: 4px;
+}
+
+.weatherForecastDay {
+  display: grid;
+  grid-template-columns: 72px 42px 64px minmax(0, 1fr) 72px;
+  align-items: center;
+  gap: 10px;
+  min-height: 58px;
+  padding: 10px 12px;
+  border: 1px solid #edf2f7;
+  border-radius: 14px;
+  background: #ffffff;
+}
+
+.weatherForecastDay:hover {
+  background: #fbfdff;
+}
+
+.weatherForecastTop {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+}
+
+.weatherForecastTop strong {
+  color: #102f55;
+  font-size: 13px;
+  font-weight: 900;
+}
+
+.weatherForecastTop span {
+  color: #74869b;
+  font-size: 11px;
+  font-weight: 700;
+}
+
+.weatherForecastIcon {
+  font-size: 25px;
+  text-align: center;
+}
+
+.weatherForecastTemps {
+  display: flex;
+  align-items: baseline;
+  gap: 6px;
+}
+
+.weatherForecastTemps strong {
+  color: #102f55;
+  font-size: 15px;
+  font-weight: 900;
+}
+
+.weatherForecastTemps span {
+  color: #74869b;
+  font-size: 12px;
+  font-weight: 750;
+}
+
+.weatherForecastCondition {
+  color: #44576c;
+  font-size: 12px;
+  font-weight: 750;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.weatherForecastRain {
+  color: #2458bf;
+  font-size: 11px;
+  font-weight: 800;
+  text-align: right;
+}
+
+/* If the weather card gets too narrow, stack the forecast rows cleaner */
+@media (max-width: 1280px) {
+  .weatherForecastDay {
+    grid-template-columns: 68px 38px 60px minmax(0, 1fr);
+  }
+
+  .weatherForecastRain {
+    grid-column: 4;
+    text-align: left;
+  }
+}
+
+@media (max-width: 640px) {
+  .weatherForecastDay {
+    grid-template-columns: 1fr auto;
+    gap: 6px;
+  }
+
+  .weatherForecastIcon,
+  .weatherForecastTemps,
+  .weatherForecastCondition,
+  .weatherForecastRain {
+    grid-column: 1 / -1;
+    text-align: left;
+  }
+}
+
 /* RESPONSIVE */
 @media (max-width: 1280px) {
   .widgetSpan6 {
@@ -1275,6 +2688,14 @@ textarea {
   .widgetSpan2,
   .widgetSpan1 {
     grid-column: span 6;
+  }
+
+  #equipmentProfileModal .profileGrid {
+    grid-template-columns: repeat(3, minmax(170px, 1fr));
+  }
+
+  #equipmentProfileModal .profileSummaryRow .dashCard {
+    grid-template-columns: repeat(2, minmax(160px, 1fr));
   }
 }
 
@@ -1325,6 +2746,45 @@ textarea {
   }
 }
 
+@media (max-width: 760px) {
+  #equipmentProfileModal {
+    padding: 8px;
+  }
+
+  #equipmentProfileModal .inventoryProfileFullscreenCard {
+    width: calc(100vw - 16px);
+    height: calc(100vh - 16px);
+    max-height: calc(100vh - 16px);
+    border-radius: 16px;
+  }
+
+  #equipmentProfileModal .appModalHeader {
+    padding: 18px;
+    align-items: flex-start;
+  }
+
+  #equipmentProfileModal .appModalHeader h2 {
+    font-size: 23px;
+  }
+
+  #equipmentProfileModal .profileHeaderActions {
+    gap: 8px;
+  }
+
+  #equipmentProfileModal #editProfileBtn {
+    padding: 10px 12px;
+  }
+
+  #equipmentProfileModal .appModalBody {
+    padding: 18px;
+  }
+
+  #equipmentProfileModal .profileGrid,
+  #equipmentProfileModal .profileSummaryRow .dashCard {
+    grid-template-columns: 1fr;
+  }
+}
+
 @media (max-width: 640px) {
   #appViews {
     padding: 14px;
@@ -1353,22 +2813,1988 @@ textarea {
     width: 100%;
   }
 
-  .inventoryProfileModalCard {
+  .inventoryProfileFullscreenCard {
     width: 100%;
   }
 }
 
-.inventoryProfileFullscreenCard {
-  width: min(1400px, calc(100vw - 32px));
-  height: calc(100vh - 32px);
-  max-height: calc(100vh - 32px);
-  display: flex;
-  flex-direction: column;
-  border-radius: 18px;
+/* =========================================================
+   DANA / GREEN-GOLD DASHBOARD THEME
+   Start here before changing dashboard.js or index.html
+========================================================= */
+
+:root {
+  --dana-green: rgb(0, 99, 65);
+  --dana-green-dark: rgb(0, 75, 50);
+  --dana-green-soft: rgba(0, 99, 65, 0.08);
+  --dana-gold: rgb(255, 205, 0);
+  --dana-red: #c73636;
 }
 
-#inventoryProfilePanel .appModalBody {
-  flex: 1;
-  overflow-y: auto;
-  max-height: none;
+/* APP BACKGROUND */
+body {
+  background: #f5f7f6;
+}
+
+/* LEFT NAVIGATION */
+#sidebar {
+  background:
+    radial-gradient(circle at top left, rgba(255, 205, 0, 0.12), transparent 32%),
+    linear-gradient(180deg, var(--dana-green) 0%, var(--dana-green-dark) 100%) !important;
+  color: #ffffff !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 8px 0 28px rgba(0, 99, 65, 0.24);
+}
+
+.sidebarTop {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18) !important;
+}
+
+.sidebarSectionLabel {
+  color: rgba(255, 255, 255, 0.72) !important;
+}
+
+#sidebar a {
+  color: rgba(255, 255, 255, 0.94) !important;
+}
+
+#sidebar a:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+}
+
+#sidebar a.active {
+  background: rgba(255, 255, 255, 0.16) !important;
+  color: #ffffff !important;
+  box-shadow: inset 0 0 0 1px rgba(255, 255, 255, 0.16);
+}
+
+/* TOP BAR */
+.globalTopbar {
+  background: #ffffff !important;
+  border-bottom: 1px solid #e3e8e6 !important;
+  box-shadow: 0 4px 14px rgba(0, 99, 65, 0.04);
+}
+
+/* SETTINGS BUTTON */
+#settingsMenuBtn {
+  background: var(--dana-green) !important;
+  border-color: var(--dana-green) !important;
+  color: #ffffff !important;
+  box-shadow: 0 8px 18px rgba(0, 99, 65, 0.2);
+}
+
+#settingsMenuBtn:hover {
+  background: var(--dana-green-dark) !important;
+  border-color: var(--dana-green-dark) !important;
+}
+
+/* DASHBOARD PAGE */
+#dashboardView {
+  margin: -22px;
+  padding: 22px;
+  min-height: calc(100vh - 72px);
+  background: #f5f7f6;
+}
+
+/* HERO AREA */
+.fleetDashboardHeader {
+  position: relative;
+  margin: -22px -22px 18px;
+  padding: 34px 34px 120px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at top left, rgba(255, 205, 0, 0.13), transparent 28%),
+    linear-gradient(135deg, var(--dana-green) 0%, var(--dana-green-dark) 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18);
+}
+
+.fleetDashboardHeader::after {
+  content: "";
+  position: absolute;
+  right: 34px;
+  top: 34px;
+  width: 420px;
+  height: 150px;
+  opacity: 0.18;
+  background:
+    url("images/tanker-line-art.png") center / contain no-repeat;
+  pointer-events: none;
+}
+
+.fleetDashboardHeader h1 {
+  color: #ffffff !important;
+  font-size: 32px;
+  font-weight: 900;
+}
+
+.fleetDashboardHeader .sectionSubtitle,
+.fleetDashboardHeader p {
+  color: rgba(255, 255, 255, 0.84) !important;
+}
+
+/* PULL KPI CARDS UP OVER HERO */
+.dashboardKpiRow {
+  position: relative;
+  z-index: 2;
+  margin-top: -90px;
+}
+
+/* KPI CARDS */
+.dashboardKpiCard {
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 99, 65, 0.12) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 12px 30px rgba(0, 45, 30, 0.12) !important;
+}
+
+.dashboardKpiValue {
+  color: var(--dana-green) !important;
+}
+
+.dashboardKpiLabel {
+  color: #40584f !important;
+}
+
+.dashboardKpiIcon.blue,
+.dashboardKpiIcon.purple {
+  background: rgba(0, 99, 65, 0.1) !important;
+  color: var(--dana-green) !important;
+}
+
+.dashboardKpiIcon.red {
+  background: rgba(199, 54, 54, 0.12) !important;
+  color: var(--dana-red) !important;
+}
+
+/* DASHBOARD WIDGETS */
+.dashboardWidget,
+.dashCard,
+.dashboardMetricCard {
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 99, 65, 0.12) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 10px 26px rgba(0, 45, 30, 0.08) !important;
+}
+
+.dashboardWidgetHeader {
+  background: linear-gradient(180deg, #ffffff 0%, #f5faf7 100%) !important;
+  border-bottom: 1px solid rgba(0, 99, 65, 0.12) !important;
+}
+
+.dashboardWidgetTitleRow h3,
+.dashboardWidgetHeader h3 {
+  color: var(--dana-green) !important;
+}
+
+/* GREEN LINKS / ACTIONS */
+.dashboardWidget a,
+.dashboardPmTable tbody td strong,
+.dueServicesRowTitle,
+.statRow strong,
+.costRow strong,
+.dashboardInventoryRow strong,
+.dashboardCostHeader strong {
+  color: var(--dana-green) !important;
+}
+
+/* STATUS CHIPS */
+.dueServicesTabBtn.active,
+.dueServicesCategoryBtn.active {
+  background: var(--dana-green) !important;
+  border-color: var(--dana-green) !important;
+  color: #ffffff !important;
+}
+
+.dueServicesCount {
+  background: rgba(255, 205, 0, 0.24) !important;
+  color: #6b5700 !important;
+}
+
+/* GOLD CHART ACCENT */
+.chartLegendBox,
+.dashboardCostBar {
+  background: linear-gradient(180deg, var(--dana-gold) 0%, #d6a900 100%) !important;
+}
+
+/* =========================================================
+   DANA / GREEN-GOLD DASHBOARD LAYOUT REFINEMENT
+   Works with updated index.html dashboard/sidebar markup
+========================================================= */
+
+:root {
+  --dana-green: rgb(0, 99, 65);
+  --dana-green-dark: rgb(0, 75, 50);
+  --dana-green-soft: rgba(0, 99, 65, 0.08);
+  --dana-green-border: rgba(0, 99, 65, 0.16);
+  --dana-gold: rgb(255, 205, 0);
+  --dana-red: #c73636;
+}
+
+/* APP BASE */
+body {
+  background: #f4f7f5;
+}
+
+/* =========================================================
+   LEFT NAVIGATION
+========================================================= */
+
+#sidebar {
+  background:
+    radial-gradient(circle at top left, rgba(255, 205, 0, 0.14), transparent 30%),
+    linear-gradient(180deg, var(--dana-green) 0%, var(--dana-green-dark) 100%) !important;
+  color: #ffffff !important;
+  box-shadow: 8px 0 28px rgba(0, 70, 46, 0.28);
+  border-right: 1px solid rgba(255, 255, 255, 0.14);
+}
+
+.sidebarTop {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18) !important;
+}
+
+.logoContainer img {
+  max-height: 92px;
+  object-fit: contain;
+}
+
+.sidebarSectionLabel {
+  margin: 18px 10px 8px;
+  color: rgba(255, 255, 255, 0.72) !important;
+  font-size: 11px;
+  font-weight: 800;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+}
+
+#sidebar a {
+  display: flex !important;
+  align-items: center;
+  gap: 12px;
+  min-height: 48px;
+  padding: 12px 14px !important;
+  border-radius: 13px;
+  color: rgba(255, 255, 255, 0.92) !important;
+  font-weight: 700;
+  background: transparent;
+}
+
+#sidebar a:hover {
+  background: rgba(255, 255, 255, 0.12) !important;
+  color: #ffffff !important;
+  transform: translateX(2px);
+}
+
+#sidebar a.active {
+  background: rgba(255, 255, 255, 0.16) !important;
+  color: #ffffff !important;
+  box-shadow:
+    inset 0 0 0 1px rgba(255, 255, 255, 0.16),
+    0 10px 22px rgba(0, 40, 25, 0.18);
+}
+
+.navIcon {
+  width: 22px;
+  min-width: 22px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  color: inherit;
+  font-size: 17px;
+  line-height: 1;
+}
+
+.sidebarDivider {
+  height: 1px;
+  margin: 14px 8px 8px;
+  background: rgba(255, 255, 255, 0.18);
+}
+
+/* =========================================================
+   TOP BAR
+========================================================= */
+
+.globalTopbar {
+  min-height: 76px;
+  background: #ffffff !important;
+  border-bottom: 1px solid #e1e7e4 !important;
+  box-shadow: 0 4px 18px rgba(0, 70, 46, 0.05);
+}
+
+.globalTopbarLeft {
+  gap: 16px;
+}
+
+.topbarIconBtn {
+  width: 42px;
+  height: 42px;
+  min-width: 42px;
+  padding: 0;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 13px;
+  background: #ffffff;
+  border: 1px solid #e1e7e4;
+  color: #1f2d28;
+  font-size: 19px;
+  box-shadow: none;
+}
+
+.topbarIconBtn:hover {
+  background: #f4faf7;
+  border-color: rgba(0, 99, 65, 0.22);
+  color: var(--dana-green);
+}
+
+.topbarPageTitle {
+  margin: 0;
+  color: #111827;
+  font-size: 22px;
+  font-weight: 850;
+  letter-spacing: -0.02em;
+}
+
+.topbarUser {
+  display: inline-flex;
+  align-items: center;
+  gap: 9px;
+  color: #1f2d28;
+  font-weight: 700;
+  font-size: 14px;
+}
+
+.topbarUserIcon {
+  font-size: 18px;
+}
+
+.topbarChevron {
+  color: #6b7a73;
+}
+
+#settingsMenuBtn {
+  min-height: 44px;
+  padding: 11px 18px !important;
+  background: var(--dana-green) !important;
+  border-color: var(--dana-green) !important;
+  color: #ffffff !important;
+  border-radius: 13px !important;
+  font-weight: 850;
+  box-shadow: 0 8px 18px rgba(0, 99, 65, 0.2);
+}
+
+#settingsMenuBtn:hover {
+  background: var(--dana-green-dark) !important;
+  border-color: var(--dana-green-dark) !important;
+}
+
+/* =========================================================
+   DASHBOARD PAGE / HERO
+========================================================= */
+
+#dashboardView {
+  margin: -22px;
+  padding: 22px;
+  min-height: calc(100vh - 76px);
+  background: #f4f7f5;
+}
+
+.fleetDashboard {
+  gap: 20px;
+}
+
+.dashboardHero {
+  position: relative;
+  min-height: 218px;
+  margin: -22px -22px 0;
+  padding: 34px 34px 118px;
+  overflow: hidden;
+  background:
+    radial-gradient(circle at 18% 0%, rgba(255, 205, 0, 0.16), transparent 32%),
+    linear-gradient(135deg, var(--dana-green) 0%, var(--dana-green-dark) 100%);
+  border-bottom: 1px solid rgba(255, 255, 255, 0.16);
+}
+
+.dashboardHero::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(circle at 58% 18%, rgba(255, 255, 255, 0.09) 0 1px, transparent 1px);
+  background-size: 14px 14px;
+  opacity: 0.28;
+  pointer-events: none;
+}
+
+.dashboardHeroContent {
+  position: relative;
+  z-index: 2;
+  max-width: 620px;
+}
+
+.dashboardHero h1,
+.dashboardHero #dashboardGreeting {
+  color: #ffffff !important;
+  font-size: 30px;
+  font-weight: 900;
+  letter-spacing: -0.035em;
+}
+
+.dashboardHero .sectionSubtitle {
+  margin-top: 8px;
+  color: rgba(255, 255, 255, 0.84) !important;
+  font-size: 15px;
+  font-weight: 500;
+}
+
+.dashboardHeroArt {
+  position: absolute;
+  right: 34px;
+  top: 30px;
+  width: min(460px, 38vw);
+  height: 150px;
+  opacity: 0.24;
+  pointer-events: none;
+}
+
+.dashboardHeroArt img {
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  filter: brightness(0) invert(1);
+}
+
+/* If tanker image file is missing, this still creates a subtle placeholder area */
+.dashboardHeroArt:empty::before {
+  content: "";
+  display: block;
+  width: 100%;
+  height: 100%;
+}
+
+/* =========================================================
+   KPI CARDS
+========================================================= */
+
+.dashboardHeroKpis,
+.dashboardKpiRow {
+  position: relative;
+  z-index: 5;
+  margin-top: -84px;
+  display: grid;
+  grid-template-columns: repeat(4, minmax(190px, 1fr));
+  gap: 14px;
+}
+
+.dashboardKpiCard {
+  min-height: 156px;
+  align-items: flex-start;
+  padding: 20px 22px;
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 99, 65, 0.12) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 14px 34px rgba(0, 45, 30, 0.12) !important;
+}
+
+.dashboardKpiContent {
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+}
+
+.dashboardKpiIcon {
+  width: 58px;
+  height: 58px;
+  min-width: 58px;
+  border-radius: 999px;
+  font-size: 25px;
+}
+
+.dashboardKpiIcon.blue,
+.dashboardKpiIcon.purple {
+  background: rgba(0, 99, 65, 0.12) !important;
+  color: var(--dana-green) !important;
+}
+
+.dashboardKpiIcon.gold {
+  background: rgba(255, 205, 0, 0.22) !important;
+  color: #a36d00 !important;
+}
+
+.dashboardKpiIcon.red {
+  background: rgba(199, 54, 54, 0.12) !important;
+  color: var(--dana-red) !important;
+}
+
+.dashboardKpiValue {
+  color: var(--dana-green) !important;
+  font-size: 34px;
+  font-weight: 900;
+  line-height: 1;
+}
+
+.dashboardKpiLabel {
+  margin-top: 4px;
+  color: #1f2d28 !important;
+  font-size: 15px;
+  font-weight: 800;
+}
+
+.dashboardKpiHint {
+  margin-top: 2px;
+  color: #5f746b !important;
+  font-size: 14px;
+  font-weight: 500;
+}
+
+.dashboardKpiLink {
+  margin-top: 18px;
+  color: var(--dana-green);
+  font-size: 14px;
+  font-weight: 850;
+  text-decoration: none;
+}
+
+.dashboardKpiLink:hover {
+  color: var(--dana-green-dark);
+  text-decoration: underline;
+}
+
+/* =========================================================
+   DASHBOARD WIDGETS
+========================================================= */
+
+.dashboardGrid.dashboardWidgetGrid {
+  gap: 18px;
+}
+
+.dashboardWidget,
+.dashCard,
+.dashboardMetricCard {
+  background: #ffffff !important;
+  border: 1px solid rgba(0, 99, 65, 0.12) !important;
+  border-radius: 18px !important;
+  box-shadow: 0 10px 26px rgba(0, 45, 30, 0.08) !important;
+}
+
+.dashboardWidgetHeader {
+  min-height: 66px;
+  background: linear-gradient(180deg, #ffffff 0%, #f6faf8 100%) !important;
+  border-bottom: 1px solid rgba(0, 99, 65, 0.12) !important;
+}
+
+.dashboardWidgetTitleRow h3,
+.dashboardWidgetHeader h3 {
+  color: #111827 !important;
+  font-weight: 900;
+}
+
+.dashboardWidgetSubtitle {
+  color: #667b72 !important;
+}
+
+.dashboardWidgetMenuBtn {
+  color: var(--dana-green) !important;
+  border-color: rgba(0, 99, 65, 0.16) !important;
+}
+
+.dashboardWidgetMenuBtn:hover {
+  background: var(--dana-green-soft) !important;
+}
+
+/* PM / service chips */
+.dueServicesTabBtn.active,
+.dueServicesCategoryBtn.active {
+  background: var(--dana-green) !important;
+  border-color: var(--dana-green) !important;
+  color: #ffffff !important;
+}
+
+.dueServicesTabBtn:hover,
+.dueServicesCategoryBtn:hover {
+  background: rgba(0, 99, 65, 0.07) !important;
+  border-color: rgba(0, 99, 65, 0.22) !important;
+}
+
+.dueServicesCount {
+  background: rgba(255, 205, 0, 0.24) !important;
+  color: #6f5900 !important;
+}
+
+/* Tables */
+.dashboardPmTable thead th {
+  background: #f5faf7 !important;
+  color: var(--dana-green) !important;
+}
+
+.dashboardPmTable tbody td strong,
+.dueServicesRowTitle,
+.statRow strong,
+.costRow strong,
+.dashboardInventoryRow strong,
+.dashboardCostHeader strong {
+  color: var(--dana-green) !important;
+}
+
+/* Chart */
+.chartLegendBox,
+.dashboardCostBar {
+  background: linear-gradient(180deg, var(--dana-gold) 0%, #d6a900 100%) !important;
+}
+
+/* Badges */
+.badge.green {
+  background: rgba(0, 99, 65, 0.12) !important;
+  color: var(--dana-green) !important;
+}
+
+.badge.gold,
+.badge.orange {
+  background: rgba(255, 205, 0, 0.24) !important;
+  color: #755e00 !important;
+}
+
+.badge.blue {
+  background: rgba(0, 99, 65, 0.10) !important;
+  color: var(--dana-green) !important;
+}
+
+.badge.red {
+  background: rgba(199, 54, 54, 0.12) !important;
+  color: var(--dana-red) !important;
+}
+
+/* =========================================================
+   RESPONSIVE TUNING
+========================================================= */
+
+@media (max-width: 1400px) {
+  .dashboardHeroKpis,
+  .dashboardKpiRow {
+    grid-template-columns: repeat(2, minmax(220px, 1fr));
+  }
+
+  .dashboardHeroArt {
+    width: 360px;
+    opacity: 0.18;
+  }
+}
+
+@media (max-width: 980px) {
+  .dashboardHero {
+    padding: 28px 22px 96px;
+  }
+
+  .dashboardHeroArt {
+    display: none;
+  }
+
+  .dashboardHeroKpis,
+  .dashboardKpiRow {
+    margin-top: -70px;
+    grid-template-columns: repeat(2, minmax(180px, 1fr));
+  }
+
+  .topbarPageTitle {
+    font-size: 20px;
+  }
+
+  .topbarUser {
+    display: none;
+  }
+}
+
+@media (max-width: 640px) {
+  .dashboardHeroKpis,
+  .dashboardKpiRow {
+    grid-template-columns: 1fr;
+  }
+
+  .dashboardKpiCard {
+    min-height: 132px;
+  }
+
+  #dashboardView {
+    margin: -14px;
+    padding: 14px;
+  }
+
+  .dashboardHero {
+    margin: -14px -14px 0;
+  }
+}
+
+/* =========================================================
+   HERO TRUCK ART - CLEAN BLENDED VERSION
+========================================================= */
+
+.fleetDashboardHeader::after,
+.dashboardHero::after {
+  content: none !important;
+  display: none !important;
+  background: none !important;
+}
+
+.dashboardHeroArt {
+  position: absolute;
+  right: 34px;
+  top: 34px;
+  width: min(520px, 42vw);
+  height: 145px;
+  z-index: 1;
+  pointer-events: none;
+
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  opacity: 1 !important;
+  overflow: visible !important;
+}
+
+.dashboardHeroArt img {
+  display: block;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+
+  /*
+    Use opacity only.
+    Do NOT use filter or mix-blend-mode unless the image is black line art.
+  */
+  filter: none !important;
+  mix-blend-mode: normal !important;
+  opacity: 0.32 !important;
+}
+
+.dashboardHeroContent {
+  position: relative;
+  z-index: 2;
+}
+
+.dashboardHeroKpis,
+.dashboardKpiRow {
+  position: relative;
+  z-index: 3;
+}
+
+
+
+/* =========================================
+   MAKE HERO TRUCK LINES LARGER
+========================================= */
+
+.dashboardHero {
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboardHeroArt {
+  position: absolute !important;
+  right: 20px !important;
+  top: 26px !important;
+  width: min(760px, 62vw) !important;
+  height: 220px !important;
+  z-index: 1 !important;
+  pointer-events: none !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.dashboardHeroArt img {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+
+  /* makes the truck art larger */
+  transform: scale(2.5) !important;
+  transform-origin: center right !important;
+
+  /* makes it slightly easier to see */
+  opacity: 0.34 !important;
+
+  filter: none !important;
+  mix-blend-mode: normal !important;
+}
+
+.dashboardHeroContent {
+  position: relative;
+  z-index: 2;
+}
+
+.dashboardHeroKpis,
+.dashboardKpiRow {
+  position: relative;
+  z-index: 4;
+}
+
+/* =========================================
+   HERO TRUCK ART - RIGHT + CENTERED
+========================================= */
+
+.dashboardHero {
+  position: relative;
+  overflow: hidden;
+}
+
+.dashboardHeroArt {
+  position: absolute !important;
+
+  /* move farther right */
+  right: 40px !important;
+
+  /* vertically center inside hero */
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+
+  /* size of the truck art container */
+  width: min(760px, 58vw) !important;
+  height: 180px !important;
+
+  z-index: 1 !important;
+  pointer-events: none !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.dashboardHeroArt img {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+
+  /* enlarge truck lines without losing control */
+  transform: scale(3.0) !important;
+  transform-origin: center center !important;
+
+  opacity: 0.32 !important;
+  filter: none !important;
+  mix-blend-mode: normal !important;
+}
+
+.dashboardHeroContent {
+  position: relative;
+  z-index: 2;
+}
+
+.dashboardHeroKpis,
+.dashboardKpiRow {
+  position: relative;
+  z-index: 4;
+}
+/* =========================================================
+   LOGIN SCREEN BRAND COLORS
+   Green: RGB(0, 99, 65)
+========================================================= */
+
+.loginBrand {
+  background: rgb(0, 99, 65) !important;
+  color: rgb(255, 205, 0) !important;
+}
+
+#loginBtn {
+  background: rgb(0, 99, 65) !important;
+  border-color: rgb(0, 99, 65) !important;
+  color: #ffffff !important;
+}
+
+#loginBtn:hover {
+  background: rgb(0, 78, 52) !important;
+  border-color: rgb(0, 78, 52) !important;
+}
+
+/* =========================================================
+   SIDEBAR NAVIGATION COLOR LOCK
+   Keeps nav links in RGB(0, 99, 65) family
+========================================================= */
+
+#sidebar {
+  background: rgb(0, 99, 65) !important;
+}
+
+/* Normal links */
+#sidebar a {
+  background: rgb(0, 99, 65) !important;
+  color: #ffffff !important;
+}
+
+/* Hover links */
+#sidebar a:hover {
+  background: rgb(0, 99, 65) !important;
+  color: #ffffff !important;
+  transform: none !important;
+}
+
+/* Active/current link */
+#sidebar a.active {
+  background: rgb(0, 99, 65) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+}
+
+/* Icons/text inside links */
+#sidebar a .navIcon,
+#sidebar a span {
+  color: inherit !important;
+}
+
+/* Optional: keep section labels readable */
+.sidebarSectionLabel {
+  color: rgba(255, 255, 255, 0.72) !important;
+}
+
+/* Optional: subtle dividers only, no alternate green */
+.sidebarDivider,
+.sidebarTop {
+  border-color: rgba(255, 255, 255, 0.18) !important;
+}
+
+/* =========================================================
+   GLOBAL DANA BRAND THEME
+   Applies same color scheme to every navigation page
+   Green: RGB(0, 99, 65)
+   Gold: RGB(255, 205, 0)
+========================================================= */
+
+:root {
+  --dana-green: rgb(0, 99, 65);
+  --dana-green-dark: rgb(0, 75, 50);
+  --dana-green-soft: rgba(0, 99, 65, 0.08);
+  --dana-green-border: rgba(0, 99, 65, 0.16);
+  --dana-gold: rgb(255, 205, 0);
+  --dana-red: #c73636;
+
+  --primary: rgb(0, 99, 65);
+  --primary-dark: rgb(0, 75, 50);
+  --heading: rgb(0, 99, 65);
+  --success: rgb(0, 99, 65);
+}
+
+/* APP BACKGROUND */
+body,
+#app,
+#appViews {
+  background: #f4f7f5;
+}
+
+/* LEFT SIDEBAR SAME ON EVERY PAGE */
+#sidebar {
+  background: rgb(0, 99, 65) !important;
+  color: #ffffff !important;
+  border-right: 1px solid rgba(255, 255, 255, 0.16);
+  box-shadow: 8px 0 28px rgba(0, 70, 46, 0.24);
+}
+
+.sidebarTop {
+  border-bottom: 1px solid rgba(255, 255, 255, 0.18) !important;
+}
+
+.sidebarSectionLabel {
+  color: rgba(255, 255, 255, 0.72) !important;
+}
+
+#sidebar a,
+#sidebar a:hover,
+#sidebar a.active {
+  background: rgb(0, 99, 65) !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+#sidebar a:hover,
+#sidebar a.active {
+  outline: 1px solid rgba(255, 255, 255, 0.22);
+}
+
+#sidebar a .navIcon,
+#sidebar a span {
+  color: inherit !important;
+}
+
+.sidebarDivider {
+  background: rgba(255, 255, 255, 0.18) !important;
+}
+
+/* KEEP LOGO CONSISTENT */
+.logoContainer img {
+  filter: none !important;
+  opacity: 1 !important;
+  max-height: 135px;
+  object-fit: contain;
+}
+
+/* TOP BAR SAME ON EVERY PAGE */
+.globalTopbar {
+  background: #ffffff !important;
+  border-bottom: 1px solid #e1e7e4 !important;
+  box-shadow: 0 4px 18px rgba(0, 70, 46, 0.05);
+}
+
+.topbarPageTitle,
+.globalTopbar h1,
+.globalTopbar h2,
+.globalTopbar h3 {
+  color: #111827 !important;
+}
+
+.topbarUser {
+  color: #1f2d28 !important;
+}
+
+/* SETTINGS BUTTON */
+#settingsMenuBtn {
+  background: rgb(0, 99, 65) !important;
+  border-color: rgb(0, 99, 65) !important;
+  color: #ffffff !important;
+  border-radius: 13px;
+  font-weight: 850;
+  box-shadow: 0 8px 18px rgba(0, 99, 65, 0.2);
+}
+
+#settingsMenuBtn:hover {
+  background: rgb(0, 75, 50) !important;
+  border-color: rgb(0, 75, 50) !important;
+  color: #ffffff !important;
+}
+
+/* PAGE HEADINGS */
+.header h1,
+.pageHeader h1,
+.equipmentPageHeader h1,
+.view h1,
+.view h2,
+.view h3 {
+  color: rgb(0, 99, 65);
+}
+
+/* ALL PRIMARY BUTTONS ACROSS APP */
+.primaryBtn,
+#loginBtn,
+#openFormBtn,
+#openQuickWOFormBtn,
+#openInventoryFormBtn,
+#openVendorFormBtn,
+#openPOFormBtn,
+#openPurchaseOrderBtn,
+#saveSettingsBtn,
+#savePasswordBtn,
+#saveDashboardEditorBtn,
+#addCustomColumnBtn,
+#deleteSelectedEquipmentBtn,
+#deleteSelectedWOBtn,
+#deleteSelectedInventoryBtn,
+#saveInventoryAdjustmentBtn,
+#editDashboardBtn,
+#saveBtn,
+#updateBtn,
+#saveInventoryBtn,
+#updateInventoryBtn,
+#appModalConfirmBtn {
+  background: rgb(0, 99, 65) !important;
+  border-color: rgb(0, 99, 65) !important;
+  color: #ffffff !important;
+}
+
+.primaryBtn:hover,
+#loginBtn:hover,
+#openFormBtn:hover,
+#openQuickWOFormBtn:hover,
+#openInventoryFormBtn:hover,
+#openVendorFormBtn:hover,
+#openPOFormBtn:hover,
+#openPurchaseOrderBtn:hover,
+#saveSettingsBtn:hover,
+#savePasswordBtn:hover,
+#saveDashboardEditorBtn:hover,
+#addCustomColumnBtn:hover,
+#deleteSelectedEquipmentBtn:hover,
+#deleteSelectedWOBtn:hover,
+#deleteSelectedInventoryBtn:hover,
+#saveInventoryAdjustmentBtn:hover,
+#editDashboardBtn:hover,
+#saveBtn:hover,
+#updateBtn:hover,
+#saveInventoryBtn:hover,
+#updateInventoryBtn:hover,
+#appModalConfirmBtn:hover {
+  background: rgb(0, 75, 50) !important;
+  border-color: rgb(0, 75, 50) !important;
+  color: #ffffff !important;
+}
+
+/* OPTION BUTTONS ACROSS NAVIGATION PAGES */
+#equipmentOptionsBtn,
+#inventoryOptionsBtn,
+#workOrdersOptionsBtn {
+  background: #ffffff !important;
+  color: rgb(0, 99, 65) !important;
+  border-color: rgba(0, 99, 65, 0.24) !important;
+}
+
+#equipmentOptionsBtn:hover,
+#inventoryOptionsBtn:hover,
+#workOrdersOptionsBtn:hover {
+  background: rgba(0, 99, 65, 0.08) !important;
+  color: rgb(0, 99, 65) !important;
+  border-color: rgba(0, 99, 65, 0.34) !important;
+}
+
+/* DROPDOWNS */
+.settingsDropdown,
+.equipmentOptionsDropdown {
+  border-color: rgba(0, 99, 65, 0.18) !important;
+}
+
+.settingsDropdown button:hover,
+.equipmentOptionsDropdown button:hover {
+  background: rgba(0, 99, 65, 0.08) !important;
+  color: rgb(0, 99, 65) !important;
+}
+
+/* TABLE HEADERS EVERY PAGE */
+.dataGrid thead th {
+  background: #f4faf7 !important;
+  color: rgb(0, 99, 65) !important;
+  border-bottom: 1px solid rgba(0, 99, 65, 0.16) !important;
+}
+
+.dataGrid tbody tr:hover {
+  background: rgba(0, 99, 65, 0.04) !important;
+}
+
+.selectedRow,
+.dataGrid tbody tr.selected {
+  background: rgba(0, 99, 65, 0.10) !important;
+}
+
+/* CARDS / PANELS */
+.gridWrap,
+.dashboardWidget,
+.dashCard,
+.dashboardMetricCard,
+.centerCard,
+.loginCard,
+.appModalCard,
+.sidePanelCard {
+  border-color: rgba(0, 99, 65, 0.14) !important;
+}
+
+/* INPUT FOCUS EVERY PAGE */
+input:focus,
+select:focus,
+textarea:focus {
+  border-color: rgba(0, 99, 65, 0.55) !important;
+  box-shadow: 0 0 0 4px rgba(0, 99, 65, 0.10) !important;
+}
+
+/* BADGES */
+.badge.green,
+.badge.blue {
+  background: rgba(0, 99, 65, 0.12) !important;
+  color: rgb(0, 99, 65) !important;
+}
+
+.badge.gold,
+.badge.orange {
+  background: rgba(255, 205, 0, 0.24) !important;
+  color: #755e00 !important;
+}
+
+.badge.red {
+  background: rgba(199, 54, 54, 0.12) !important;
+  color: #c73636 !important;
+}
+
+/* LOGIN SCREEN */
+.loginBrand {
+  background: rgb(0, 99, 65) !important;
+  color: #ffffff !important;
+}
+
+/* DASHBOARD HERO TRUCK ART */
+.dashboardHeroArt {
+  position: absolute !important;
+  right: 30px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: min(760px, 58vw) !important;
+  height: 180px !important;
+  z-index: 1 !important;
+  pointer-events: none !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+.dashboardHeroArt img {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  opacity: 0.32 !important;
+  filter: none !important;
+  mix-blend-mode: normal !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.dashboardHeroContent {
+  position: relative;
+  z-index: 2;
+}
+
+.dashboardHeroKpis,
+.dashboardKpiRow {
+  position: relative;
+  z-index: 4;
+}
+
+/* =========================================================
+   FINAL GREEN MATCH OVERRIDE
+   Forces sidebar, hero, buttons, and active nav to same green
+   Exact green: RGB(0, 99, 65) / #006341
+========================================================= */
+
+:root {
+  --dana-green: rgb(0, 99, 65);
+  --dana-green-dark: rgb(0, 99, 65);
+  --brand-green: rgb(0, 99, 65);
+  --brand-green-dark: rgb(0, 99, 65);
+  --primary: rgb(0, 99, 65);
+  --primary-dark: rgb(0, 99, 65);
+}
+
+/* Sidebar: exact flat green */
+#sidebar {
+  background: rgb(0, 99, 65) !important;
+  background-image: none !important;
+  color: #ffffff !important;
+}
+
+/* Sidebar top divider only, no color shift */
+.sidebarTop {
+  border-bottom-color: rgba(255, 255, 255, 0.18) !important;
+}
+
+/* Sidebar links: no alternate green shade */
+#sidebar a,
+#sidebar a:hover,
+#sidebar a.active {
+  background: rgb(0, 99, 65) !important;
+  background-image: none !important;
+  color: #ffffff !important;
+  box-shadow: none !important;
+  transform: none !important;
+}
+
+/* Optional subtle selected indicator without changing green */
+#sidebar a.active {
+  outline: 1px solid rgba(255, 255, 255, 0.28);
+}
+
+/* Dashboard hero: exact flat green */
+.dashboardHero,
+.fleetDashboardHeader {
+  background: rgb(0, 99, 65) !important;
+  background-image: none !important;
+}
+
+/* Remove older pseudo truck background if still active */
+.fleetDashboardHeader::after,
+.dashboardHero::after {
+  content: none !important;
+  display: none !important;
+  background: none !important;
+}
+
+/* Buttons: same exact green */
+#settingsMenuBtn,
+.primaryBtn,
+#loginBtn,
+#editDashboardBtn,
+#openFormBtn,
+#openQuickWOFormBtn,
+#openInventoryFormBtn,
+#openVendorFormBtn,
+#openPOFormBtn,
+#openPurchaseOrderBtn,
+#saveSettingsBtn,
+#savePasswordBtn,
+#saveDashboardEditorBtn,
+#addCustomColumnBtn,
+#deleteSelectedEquipmentBtn,
+#deleteSelectedWOBtn,
+#deleteSelectedInventoryBtn,
+#saveInventoryAdjustmentBtn,
+#saveBtn,
+#updateBtn,
+#saveInventoryBtn,
+#updateInventoryBtn,
+#appModalConfirmBtn {
+  background: rgb(0, 99, 65) !important;
+  background-image: none !important;
+  border-color: rgb(0, 99, 65) !important;
+  color: #ffffff !important;
+}
+
+/* Button hover: same green, no darker shift */
+#settingsMenuBtn:hover,
+.primaryBtn:hover,
+#loginBtn:hover,
+#editDashboardBtn:hover,
+#openFormBtn:hover,
+#openQuickWOFormBtn:hover,
+#openInventoryFormBtn:hover,
+#openVendorFormBtn:hover,
+#openPOFormBtn:hover,
+#openPurchaseOrderBtn:hover,
+#saveSettingsBtn:hover,
+#savePasswordBtn:hover,
+#saveDashboardEditorBtn:hover,
+#addCustomColumnBtn:hover,
+#deleteSelectedEquipmentBtn:hover,
+#deleteSelectedWOBtn:hover,
+#deleteSelectedInventoryBtn:hover,
+#saveInventoryAdjustmentBtn:hover,
+#saveBtn:hover,
+#updateBtn:hover,
+#saveInventoryBtn:hover,
+#updateInventoryBtn:hover,
+#appModalConfirmBtn:hover {
+  background: rgb(0, 99, 65) !important;
+  background-image: none !important;
+  border-color: rgb(0, 99, 65) !important;
+  color: #ffffff !important;
+}
+
+/* Keep truck image visible over flat green */
+.dashboardHeroArt {
+  z-index: 1 !important;
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+}
+
+.dashboardHeroArt img {
+  background: transparent !important;
+  border: none !important;
+  box-shadow: none !important;
+  opacity: 0.32 !important;
+}
+
+/* =========================================================
+   FINAL FIX: REMOVE GREEN SEAM / DUPLICATE TRUCK LAYERS
+========================================================= */
+
+:root {
+  --dana-green: rgb(0, 99, 65);
+  --dana-green-dark: rgb(0, 99, 65);
+  --brand-green: rgb(0, 99, 65);
+  --brand-green-dark: rgb(0, 99, 65);
+  --primary: rgb(0, 99, 65);
+  --primary-dark: rgb(0, 99, 65);
+}
+
+/* Force flat green everywhere, no gradients */
+#sidebar,
+.dashboardHero,
+.fleetDashboardHeader {
+  background: rgb(0, 99, 65) !important;
+  background-image: none !important;
+}
+
+/* Kill old pseudo truck image layer completely */
+.fleetDashboardHeader::after,
+.dashboardHero::after,
+.fleetDashboardHeader::before,
+.dashboardHero::before {
+  content: none !important;
+  display: none !important;
+  background: none !important;
+  background-image: none !important;
+}
+
+/* Keep only the real image from index.html */
+.dashboardHeroArt {
+  position: absolute !important;
+  right: 30px !important;
+  top: 50% !important;
+  transform: translateY(-50%) !important;
+  width: min(760px, 58vw) !important;
+  height: 180px !important;
+  z-index: 1 !important;
+  pointer-events: none !important;
+  background: transparent !important;
+  background-image: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  overflow: visible !important;
+}
+
+/* Remove any rectangular background from the image element */
+.dashboardHeroArt img {
+  display: block !important;
+  width: 100% !important;
+  height: 100% !important;
+  object-fit: contain !important;
+  background: transparent !important;
+  background-image: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  opacity: 0.32 !important;
+  mix-blend-mode: normal !important;
+  filter: none !important;
+}
+
+/* Make sure hero text/cards sit above truck art */
+.dashboardHeroContent {
+  position: relative !important;
+  z-index: 2 !important;
+}
+
+.dashboardHeroKpis,
+.dashboardKpiRow {
+  position: relative !important;
+  z-index: 4 !important;
+}
+
+/* =========================================================
+   INVENTORY GRID — MATCH WORK ORDERS STRUCTURE
+   ========================================================= */
+
+#inventoryView .pageHeader {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  margin-bottom: 18px;
+}
+
+#inventoryView .pageHeader h1 {
+  color: rgb(0, 99, 65);
+  font-size: 28px;
+  font-weight: 800;
+  letter-spacing: 1px;
+  margin: 0;
+}
+
+#inventoryView .pageActions {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+
+#inventoryView .pageSearchInput {
+  width: 420px;
+  max-width: 100%;
+  height: 44px;
+  border: 1px solid #d5dee8;
+  border-radius: 8px;
+  padding: 0 14px;
+  font-size: 14px;
+  background: #ffffff;
+  margin-bottom: 12px;
+}
+
+.inventoryFilterBar {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  background: #f7fbfa;
+  border: 1px solid #dce8e4;
+  border-radius: 16px 16px 0 0;
+  padding: 10px;
+  margin-top: 10px;
+}
+
+.inventoryFilterBar .filterGroup {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  background: #f7fbfa;
+}
+
+.inventoryFilterBar .filterGroup label {
+  font-size: 13px;
+  color: #0f2737;
+  white-space: nowrap;
+}
+
+.inventoryFilterBar .filterGroup input,
+.inventoryFilterBar .filterGroup select {
+  height: 42px;
+  border: 1px solid #d5dee8;
+  border-radius: 8px;
+  background: #ffffff;
+  padding: 0 12px;
+  font-size: 14px;
+  min-width: 140px;
+}
+
+#inventoryView .gridCard {
+  background: #ffffff;
+  border: 1px solid #dce8e4;
+  border-top: none;
+  border-radius: 0 0 16px 16px;
+  overflow: hidden;
+  box-shadow: 0 8px 20px rgba(15, 39, 55, 0.08);
+}
+
+.inventoryGrid {
+  width: 100%;
+  border-collapse: collapse;
+  table-layout: fixed;
+}
+
+.inventoryGrid thead {
+  background: #f7fbfa;
+}
+
+.inventoryGrid th {
+  padding: 12px 14px;
+  text-align: left;
+  font-size: 13px;
+  font-weight: 800;
+  color: #071f2f;
+  border-bottom: 1px solid #dce8e4;
+}
+
+.inventoryGrid td {
+  padding: 12px 14px;
+  font-size: 14px;
+  color: #071f2f;
+  border-bottom: 1px solid #e8eef2;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.inventoryGrid tbody tr:hover {
+  background: #f2f8f6;
+  cursor: pointer;
+}
+
+#inventoryRecordCount {
+  margin-top: 10px;
+  color: #5b6b77;
+  font-size: 14px;
+}
+
+/* =========================================================
+   INVENTORY PAGE — MATCH WORK ORDERS GRID
+========================================================= */
+
+#inventoryView .gridSearchRow {
+  margin-bottom: 12px;
+}
+
+#inventoryView #inventoryGlobalSearch {
+  max-width: 420px;
+  height: 44px;
+  border-radius: 10px;
+}
+
+#inventoryColumnFilters {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  flex-wrap: nowrap;
+  overflow-x: auto;
+  padding: 10px;
+  margin-bottom: 0;
+  background: #f7fbfa;
+  border: 1px solid rgba(0, 99, 65, 0.14);
+  border-bottom: none;
+  border-radius: 16px 16px 0 0;
+}
+
+#inventoryColumnFilters .inventoryFilterItem {
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  flex: 0 0 auto;
+  padding: 0;
+  background: transparent;
+  border: none;
+  border-radius: 0;
+}
+
+#inventoryColumnFilters .inventoryFilterItem label {
+  color: #0f2737;
+  font-size: 13px;
+  font-weight: 700;
+  white-space: nowrap;
+}
+
+#inventoryColumnFilters .inventoryFilterItem input {
+  width: 160px;
+  height: 42px;
+  border: 1px solid #d5dee8;
+  border-radius: 10px;
+  background: #ffffff;
+  padding: 0 12px;
+  font-size: 14px;
+}
+
+#inventoryView .gridWrap {
+  border-top-left-radius: 0;
+  border-top-right-radius: 0;
+  border-color: rgba(0, 99, 65, 0.14) !important;
+}
+
+#inventoryTable {
+  width: 100%;
+  min-width: 980px;
+  table-layout: fixed;
+}
+
+#inventoryTable thead th {
+  background: #f4faf7 !important;
+  color: rgb(0, 99, 65) !important;
+  border-bottom: 1px solid rgba(0, 99, 65, 0.16) !important;
+  font-size: 13px;
+  font-weight: 850;
+}
+
+#inventoryTable tbody td {
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+#inventoryTable tbody tr:hover {
+  background: rgba(0, 99, 65, 0.04) !important;
+  cursor: pointer;
+}
+
+#inventoryTable .gridHeaderCellInner {
+  display: flex;
+  align-items: center;
+  justify-content: flex-start;
+}
+
+#inventoryTable .gridHeaderSortBtn {
+  width: auto;
+  min-width: 0;
+  padding: 0;
+  border: none;
+  background: transparent !important;
+  color: inherit !important;
+  box-shadow: none !important;
+  font-weight: 850;
+  text-align: left;
+}
+
+#inventoryTable .gridHeaderSortBtn:hover {
+  background: transparent !important;
+  border: none;
+  box-shadow: none !important;
+}
+
+#inventoryResultCount {
+  margin-top: 10px;
+  color: #5b6b77;
+  font-size: 14px;
+}
+
+/* =========================================================
+   INVENTORY BARCODE LABEL PREVIEW / ZEBRA PRINT
+   Add this at the VERY BOTTOM of styles.css
+========================================================= */
+
+.barcodePreviewModalCard {
+  width: min(1120px, calc(100vw - 40px));
+  max-height: 92vh;
+  display: flex;
+  flex-direction: column;
+}
+
+.barcodePreviewModalCard .appModalBody {
+  overflow: auto;
+}
+
+.barcodePrintControls {
+  display: flex;
+  align-items: end;
+  gap: 12px;
+  flex-wrap: wrap;
+  padding: 12px;
+  margin-bottom: 14px;
+  border: 1px solid rgba(0, 99, 65, 0.14);
+  border-radius: 14px;
+  background: #f7fbfa;
+}
+
+.barcodePrintControls .fieldGroup {
+  margin-bottom: 0;
+  min-width: 150px;
+}
+
+.barcodePrintControls button {
+  min-height: 44px;
+}
+
+.barcodePreviewHelp {
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(0, 99, 65, 0.06);
+  border: 1px solid rgba(0, 99, 65, 0.12);
+  color: #243b32;
+  font-size: 13px;
+}
+
+.barcodePreviewSheet {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 14px;
+  align-items: flex-start;
+  padding: 14px;
+  background: #eef3f0;
+  border: 1px dashed rgba(0, 99, 65, 0.28);
+  border-radius: 16px;
+}
+
+.barcodePreviewItem {
+  background: #ffffff;
+  border: 1px solid #111111;
+  box-shadow: 0 8px 18px rgba(15, 23, 42, 0.12);
+  overflow: hidden;
+}
+
+.barcodeSize-2x1 .barcodePreviewItem {
+  width: 2in;
+  height: 1in;
+}
+
+.barcodeSize-3x1 .barcodePreviewItem {
+  width: 3in;
+  height: 1in;
+}
+
+.barcodeSize-4x2 .barcodePreviewItem {
+  width: 4in;
+  height: 2in;
+}
+
+.inventoryBarcodeLabel {
+  width: 100%;
+  height: 100%;
+  padding: 0.075in;
+  color: #000000;
+  background: #ffffff;
+  font-family: Arial, Helvetica, sans-serif;
+  display: flex;
+  flex-direction: column;
+  justify-content: space-between;
+}
+
+.barcodeLabelTop {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  align-items: flex-start;
+}
+
+.barcodePartName {
+  font-size: 8pt;
+  font-weight: 900;
+  line-height: 1.05;
+  max-height: 18pt;
+  overflow: hidden;
+  color: #000000;
+}
+
+.barcodePrice {
+  font-size: 8pt;
+  font-weight: 900;
+  white-space: nowrap;
+  color: #000000;
+}
+
+.barcodeMetaRow {
+  display: flex;
+  justify-content: space-between;
+  gap: 6px;
+  font-size: 6.5pt;
+  line-height: 1.1;
+  color: #000000;
+}
+
+.barcodeMetaRow span {
+  font-weight: 700;
+}
+
+.barcodeMetaRow strong {
+  font-weight: 900;
+  text-align: right;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.barcodeImageWrap {
+  height: 0.32in;
+  width: 100%;
+  overflow: hidden;
+}
+
+.barcodeSvg {
+  width: 100%;
+  height: 100%;
+  display: block;
+}
+
+.barcodeHumanText {
+  font-size: 7pt;
+  font-weight: 900;
+  letter-spacing: 0.06em;
+  text-align: center;
+  line-height: 1;
+  color: #000000;
+}
+
+.barcodeFallback {
+  width: 100%;
+  height: 100%;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border: 1px solid #000000;
+  color: #000000;
+  background: #ffffff;
+  font-size: 8pt;
+  font-weight: 900;
+  letter-spacing: 0.08em;
+}
+
+.emptyBarcodePreview {
+  width: 100%;
+  padding: 30px;
+  text-align: center;
+  color: #66778a;
+  background: #ffffff;
+  border-radius: 12px;
+}
+
+/* 3 x 1 label adjustments */
+.barcodeSize-3x1 .barcodePartName {
+  font-size: 9pt;
+}
+
+.barcodeSize-3x1 .barcodePrice {
+  font-size: 9pt;
+}
+
+.barcodeSize-3x1 .barcodeMetaRow {
+  font-size: 7pt;
+}
+
+.barcodeSize-3x1 .barcodeImageWrap {
+  height: 0.34in;
+}
+
+.barcodeSize-3x1 .barcodeHumanText {
+  font-size: 7.5pt;
+}
+
+/* 4 x 2 label adjustments */
+.barcodeSize-4x2 .inventoryBarcodeLabel {
+  padding: 0.12in;
+}
+
+.barcodeSize-4x2 .barcodePartName {
+  font-size: 13pt;
+  max-height: 30pt;
+}
+
+.barcodeSize-4x2 .barcodePrice {
+  font-size: 12pt;
+}
+
+.barcodeSize-4x2 .barcodeMetaRow {
+  font-size: 10pt;
+}
+
+.barcodeSize-4x2 .barcodeImageWrap {
+  height: 0.65in;
+}
+
+.barcodeSize-4x2 .barcodeHumanText {
+  font-size: 11pt;
+}
+
+/* Print only barcode labels */
+@media print {
+  body * {
+    visibility: hidden !important;
+  }
+
+  #inventoryBarcodePreview,
+  #inventoryBarcodePreview * {
+    visibility: visible !important;
+  }
+
+  #inventoryBarcodePreview {
+    position: absolute !important;
+    left: 0 !important;
+    top: 0 !important;
+    display: block !important;
+    padding: 0 !important;
+    margin: 0 !important;
+    background: #ffffff !important;
+    border: none !important;
+    border-radius: 0 !important;
+  }
+
+  #inventoryBarcodePreview .barcodePreviewItem {
+    display: block !important;
+    box-shadow: none !important;
+    border: none !important;
+    page-break-inside: avoid;
+    break-inside: avoid;
+    margin: 0 !important;
+  }
+
+  #inventoryBarcodePreview.barcodeSize-2x1 .barcodePreviewItem {
+    width: 2in !important;
+    height: 1in !important;
+  }
+
+  #inventoryBarcodePreview.barcodeSize-3x1 .barcodePreviewItem {
+    width: 3in !important;
+    height: 1in !important;
+  }
+
+  #inventoryBarcodePreview.barcodeSize-4x2 .barcodePreviewItem {
+    width: 4in !important;
+    height: 2in !important;
+  }
+
+  .inventoryBarcodeLabel {
+    box-shadow: none !important;
+    border: none !important;
+  }
+
+  @page {
+    margin: 0;
+  }
 }

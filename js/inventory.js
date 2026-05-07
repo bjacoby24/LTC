@@ -16,8 +16,6 @@ import {
 } from "./storage.js";
 import {
   getFilteredGridData,
-  buildColumnFiltersGeneric,
-  renderGridHeaderGeneric,
   toggleRowSelection,
   clearSelections,
   updateSelectionButtonText,
@@ -33,11 +31,11 @@ export async function initInventory() {
   let viewingInventoryId = null;
   let selectedInventoryIds = new Set();
   let inventorySelectionMode = false;
-  let inventoryFilterUiMode = "header";
+  let inventoryBarcodeSelectionMode = false;
+  let eventsBound = false;
 
   let appModalResolver = null;
   let appModalLastFocus = null;
-  let eventsBound = false;
 
   const DEFAULT_INVENTORY_COLUMNS = [
     { key: "partNumber", label: "Part #", visible: true, sortable: true, filterType: "text", custom: false },
@@ -56,9 +54,19 @@ export async function initInventory() {
   ];
 
   let inventoryColumns = loadInventoryColumns(DEFAULT_INVENTORY_COLUMNS);
+
   if (!Array.isArray(inventoryColumns) || !inventoryColumns.length) {
     inventoryColumns = DEFAULT_INVENTORY_COLUMNS.map(col => ({ ...col }));
   }
+
+  inventoryColumns = inventoryColumns.map(col => ({
+    sortable: true,
+    filterType: "text",
+    custom: false,
+    ...col,
+    visible: col.visible !== false
+  }));
+
   if (!inventoryColumns.some(col => col.visible)) {
     inventoryColumns = DEFAULT_INVENTORY_COLUMNS.map(col => ({ ...col }));
   }
@@ -71,8 +79,24 @@ export async function initInventory() {
     headerMenuOpenFor: null
   });
 
+  if (!inventoryGridState || typeof inventoryGridState !== "object") {
+    inventoryGridState = {
+      sortKey: "name",
+      sortDirection: "asc",
+      globalSearch: "",
+      filters: {},
+      headerMenuOpenFor: null
+    };
+  }
+
+  inventoryGridState.filters =
+    inventoryGridState.filters && typeof inventoryGridState.filters === "object"
+      ? inventoryGridState.filters
+      : {};
+
   function getCurrentPermissions() {
     const loggedInUser = getLoggedInUser();
+
     const permissions =
       loggedInUser &&
       typeof loggedInUser === "object" &&
@@ -106,58 +130,6 @@ export async function initInventory() {
     return !!getCurrentPermissions().inventoryDelete;
   }
 
-  async function requirePermission(checkFn, title, message) {
-    if (typeof checkFn === "function" ? checkFn() : !!checkFn) return true;
-    await showMessageModal(title, message);
-    return false;
-  }
-
-  function applyInventoryPermissionUi() {
-    if (dom.openInventoryFormBtn) {
-      dom.openInventoryFormBtn.style.display = canEditInventory() ? "" : "none";
-    }
-
-    if (dom.deleteSelectedInventoryBtn) {
-      dom.deleteSelectedInventoryBtn.style.display = canDeleteInventory() ? "" : "none";
-    }
-
-    if (dom.saveInventoryBtn) {
-      dom.saveInventoryBtn.style.display = canEditInventory() ? "" : "none";
-    }
-
-    if (dom.updateInventoryBtn) {
-      dom.updateInventoryBtn.style.display =
-        editingInventoryId != null && canEditInventory() ? "" : "none";
-    }
-
-    if (dom.deleteInventoryBtn) {
-      dom.deleteInventoryBtn.style.display =
-        editingInventoryId != null && canDeleteInventory() ? "" : "none";
-    }
-
-    if (dom.importInventoryBtn) {
-      dom.importInventoryBtn.style.display = canEditInventory() ? "" : "none";
-    }
-
-    if (dom.exportInventoryBtn) {
-      dom.exportInventoryBtn.style.display = canViewInventory() ? "" : "none";
-    }
-
-    if (dom.editInventoryProfileBtn) {
-      dom.editInventoryProfileBtn.style.display = canEditInventory() ? "" : "none";
-    }
-
-    if (dom.inventoryAdminQuickAdjustSection) {
-      dom.inventoryAdminQuickAdjustSection.style.display =
-        isAdminUser() && viewingInventoryId != null ? "" : "none";
-    }
-
-    if (dom.inventoryAdjustmentHistorySection) {
-      dom.inventoryAdjustmentHistorySection.style.display =
-        isAdminUser() && viewingInventoryId != null ? "" : "none";
-    }
-  }
-
   function suppressLiveReload(ms = 3000) {
     if (typeof window.suppressFleetLiveReload === "function") {
       window.suppressFleetLiveReload(ms);
@@ -168,7 +140,7 @@ export async function initInventory() {
     title = "Message",
     message = "",
     confirmText = "OK",
-    cancelText = "",
+    cancelText = "Cancel",
     danger = false,
     showCancel = false
   } = {}) {
@@ -180,7 +152,7 @@ export async function initInventory() {
     const closeBtn = dom.appModalCloseBtn;
 
     if (!modal || !titleEl || !messageEl || !confirmBtn) {
-      return Promise.resolve(showCancel ? false : true);
+      return Promise.resolve(showCancel ? window.confirm(message) : true);
     }
 
     if (appModalResolver) {
@@ -207,6 +179,7 @@ export async function initInventory() {
 
       const finish = result => {
         if (!appModalResolver) return;
+
         const currentResolve = appModalResolver;
         appModalResolver = null;
         modal.classList.remove("show");
@@ -216,6 +189,7 @@ export async function initInventory() {
           if (appModalLastFocus && typeof appModalLastFocus.focus === "function") {
             appModalLastFocus.focus();
           }
+
           appModalLastFocus = null;
         }, 0);
       };
@@ -256,23 +230,11 @@ export async function initInventory() {
     });
   }
 
-  async function hydrateInventory() {
-    try {
-      const loaded = await loadInventory();
-      inventory = Array.isArray(loaded) ? loaded : [];
-    } catch (error) {
-      console.error("Failed to load inventory:", error);
-      inventory = [];
-    }
-  }
+  async function requirePermission(checkFn, title, message) {
+    if (typeof checkFn === "function" ? checkFn() : !!checkFn) return true;
 
-  async function persistInventory() {
-    suppressLiveReload(3000);
-    inventory = await saveInventory(inventory);
-  }
-
-  function persistGrid() {
-    saveInventoryGridSettings(inventoryColumns, inventoryGridState);
+    await showMessageModal(title, message);
+    return false;
   }
 
   function toNumber(value, fallback = 0) {
@@ -283,29 +245,36 @@ export async function initInventory() {
   function normalizeDateString(value) {
     const clean = String(value || "").trim();
     if (!clean) return "";
+
     const parsed = new Date(clean);
     if (Number.isNaN(parsed.getTime())) return clean;
+
     return parsed.toISOString();
   }
 
   function formatDateTime(value) {
     const clean = String(value || "").trim();
     if (!clean) return "—";
+
     const parsed = new Date(clean);
     if (Number.isNaN(parsed.getTime())) return clean;
+
     return parsed.toLocaleString();
   }
 
   function formatDate(value) {
     const clean = String(value || "").trim();
     if (!clean) return "—";
+
     const parsed = new Date(clean);
     if (Number.isNaN(parsed.getTime())) return clean;
+
     return parsed.toLocaleDateString();
   }
 
   function formatCurrency(value) {
     const num = toNumber(value, 0);
+
     return new Intl.NumberFormat(undefined, {
       style: "currency",
       currency: "USD"
@@ -373,22 +342,21 @@ export async function initInventory() {
       reorderPoint: toNumber(item.reorderPoint, 0),
       reorderQuantity: toNumber(item.reorderQuantity, 0),
       maximumQuantity: toNumber(item.maximumQuantity, 0),
-
-      minimumQuantity: toNumber(
-        item.minimumQuantity,
-        toNumber(item.reorderPoint, 0)
-      ),
+      minimumQuantity: toNumber(item.minimumQuantity, toNumber(item.reorderPoint, 0)),
 
       quickAdjustEnabled: item.quickAdjustEnabled !== false,
-
       profileNotes: String(item.profileNotes || item.notes || "").trim(),
       binLocation: String(item.binLocation || "").trim(),
       manufacturer: String(item.manufacturer || "").trim(),
       partType: String(item.partType || "").trim(),
       uom: String(item.uom || "EA").trim() || "EA",
 
-      lastPurchasedAt: normalizeDateString(item.lastPurchasedAt || getLatestDateFromHistory(purchaseHistory)),
-      lastIssuedAt: normalizeDateString(item.lastIssuedAt || getLatestDateFromHistory(issueHistory)),
+      lastPurchasedAt: normalizeDateString(
+        item.lastPurchasedAt || getLatestDateFromHistory(purchaseHistory)
+      ),
+      lastIssuedAt: normalizeDateString(
+        item.lastIssuedAt || getLatestDateFromHistory(issueHistory)
+      ),
       lastPurchasedCost: toNumber(item.lastPurchasedCost, 0),
 
       purchaseHistory: sortHistoryByDateDesc(purchaseHistory),
@@ -424,6 +392,25 @@ export async function initInventory() {
     return getNormalizedInventory().find(entry => String(entry.id) === String(itemId)) || null;
   }
 
+  async function hydrateInventory() {
+    try {
+      const loaded = await loadInventory();
+      inventory = Array.isArray(loaded) ? loaded : [];
+    } catch (error) {
+      console.error("Failed to load inventory:", error);
+      inventory = [];
+    }
+  }
+
+  async function persistInventory() {
+    suppressLiveReload(3000);
+    inventory = await saveInventory(inventory);
+  }
+
+  function persistGrid() {
+    saveInventoryGridSettings(inventoryColumns, inventoryGridState);
+  }
+
   function closeInventoryOptionsDropdown() {
     if (dom.inventoryOptionsDropdown) {
       dom.inventoryOptionsDropdown.classList.remove("show");
@@ -444,6 +431,7 @@ export async function initInventory() {
     if (dom.inventoryFormPanel) {
       dom.inventoryFormPanel.classList.remove("show");
     }
+
     editingInventoryId = null;
     applyInventoryPermissionUi();
   }
@@ -452,6 +440,7 @@ export async function initInventory() {
     if (dom.inventoryProfilePanel) {
       dom.inventoryProfilePanel.classList.remove("show");
     }
+
     viewingInventoryId = null;
     applyInventoryPermissionUi();
   }
@@ -486,13 +475,62 @@ export async function initInventory() {
       dom.saveInventoryBtn.style.display =
         mode === "save" && canEditInventory() ? "inline-block" : "none";
     }
+
     if (dom.updateInventoryBtn) {
       dom.updateInventoryBtn.style.display =
         mode === "edit" && canEditInventory() ? "inline-block" : "none";
     }
+
     if (dom.deleteInventoryBtn) {
       dom.deleteInventoryBtn.style.display =
         mode === "edit" && canDeleteInventory() ? "inline-block" : "none";
+    }
+  }
+
+  function applyInventoryPermissionUi() {
+    if (dom.openInventoryFormBtn) {
+      dom.openInventoryFormBtn.style.display = canEditInventory() ? "" : "none";
+    }
+
+    if (dom.deleteSelectedInventoryBtn) {
+      dom.deleteSelectedInventoryBtn.style.display =
+        canDeleteInventory() && !inventoryBarcodeSelectionMode ? "" : "none";
+    }
+
+    if (dom.saveInventoryBtn) {
+      dom.saveInventoryBtn.style.display = canEditInventory() ? "" : "none";
+    }
+
+    if (dom.updateInventoryBtn) {
+      dom.updateInventoryBtn.style.display =
+        editingInventoryId != null && canEditInventory() ? "" : "none";
+    }
+
+    if (dom.deleteInventoryBtn) {
+      dom.deleteInventoryBtn.style.display =
+        editingInventoryId != null && canDeleteInventory() ? "" : "none";
+    }
+
+    if (dom.importInventoryBtn) {
+      dom.importInventoryBtn.style.display = canEditInventory() ? "" : "none";
+    }
+
+    if (dom.exportInventoryBtn) {
+      dom.exportInventoryBtn.style.display = canViewInventory() ? "" : "none";
+    }
+
+    if (dom.editInventoryProfileBtn) {
+      dom.editInventoryProfileBtn.style.display = canEditInventory() ? "" : "none";
+    }
+
+    if (dom.inventoryAdminQuickAdjustSection) {
+      dom.inventoryAdminQuickAdjustSection.style.display =
+        isAdminUser() && viewingInventoryId != null ? "" : "none";
+    }
+
+    if (dom.inventoryAdjustmentHistorySection) {
+      dom.inventoryAdjustmentHistorySection.style.display =
+        isAdminUser() && viewingInventoryId != null ? "" : "none";
     }
   }
 
@@ -503,6 +541,7 @@ export async function initInventory() {
       ...baseExisting,
       id: existingId ?? baseExisting.id ?? makeId(),
       name: dom.invName?.value || "",
+      itemName: dom.invName?.value || "",
       partNumber: dom.invPartNumber?.value || "",
       category: dom.invCategory?.value || "",
       quantity: dom.invQuantity?.value || 0,
@@ -542,13 +581,280 @@ export async function initInventory() {
     const recordKey = buildInventoryDuplicateKey(record);
 
     return inventory.some(item => {
+      const normalized = normalizeInventoryRecord(item);
       const sameRecord =
-        excludeId != null && String(item.id) === String(excludeId);
+        excludeId != null && String(normalized.id) === String(excludeId);
 
       if (sameRecord) return false;
 
-      return buildInventoryDuplicateKey(normalizeInventoryRecord(item)) === recordKey;
+      return buildInventoryDuplicateKey(normalized) === recordKey;
     });
+  }
+
+  function getFormattedCellValue(item, column) {
+    const rawValue = item[column.key];
+
+    if (column.key === "unitCost" || column.key === "lastPurchasedCost") {
+      return formatCurrency(rawValue);
+    }
+
+    if (column.key === "lastPurchasedAt" || column.key === "lastIssuedAt") {
+      return formatDate(rawValue);
+    }
+
+    return normalizeCellValue(rawValue);
+  }
+
+  function createSortLabel(column) {
+    const isSorted = inventoryGridState.sortKey === column.key;
+
+    if (!column.sortable) return column.label;
+
+    if (!isSorted) return `${column.label} ↕`;
+
+    return inventoryGridState.sortDirection === "desc"
+      ? `${column.label} ↓`
+      : `${column.label} ↑`;
+  }
+
+  function renderInventoryFilterRow(visibleColumns) {
+    const filterWrap = dom.inventoryColumnFilters || byId("inventoryColumnFilters");
+    if (!filterWrap) return;
+
+    const activeElement = document.activeElement;
+    const activeFilterKey = activeElement?.dataset?.inventoryFilterKey || "";
+    const activeFilterStart =
+      typeof activeElement?.selectionStart === "number"
+        ? activeElement.selectionStart
+        : null;
+    const activeFilterEnd =
+      typeof activeElement?.selectionEnd === "number"
+        ? activeElement.selectionEnd
+        : null;
+
+    filterWrap.innerHTML = "";
+    filterWrap.classList.add("inventoryColumnFilters");
+
+    visibleColumns.forEach(column => {
+      const filterItem = document.createElement("div");
+      filterItem.className = "columnFilterItem inventoryFilterItem";
+
+      const label = document.createElement("label");
+      label.textContent = column.label;
+
+      const input = document.createElement("input");
+      input.type = "text";
+      input.dataset.inventoryFilterKey = column.key;
+      input.placeholder = `Filter ${column.label}`;
+      input.value = inventoryGridState.filters?.[column.key] || "";
+
+      input.addEventListener("input", event => {
+        const value = String(event.target.value || "");
+
+        inventoryGridState.filters = {
+          ...inventoryGridState.filters,
+          [column.key]: value
+        };
+
+        if (!value) {
+          delete inventoryGridState.filters[column.key];
+        }
+
+        inventoryGridState.headerMenuOpenFor = null;
+        persistGrid();
+        renderInventoryGrid();
+      });
+
+      filterItem.appendChild(label);
+      filterItem.appendChild(input);
+      filterWrap.appendChild(filterItem);
+    });
+
+    if (activeFilterKey) {
+      const nextActiveFilter = filterWrap.querySelector(
+        `[data-inventory-filter-key="${activeFilterKey}"]`
+      );
+
+      if (nextActiveFilter) {
+        nextActiveFilter.focus();
+
+        if (
+          activeFilterStart !== null &&
+          activeFilterEnd !== null &&
+          typeof nextActiveFilter.setSelectionRange === "function"
+        ) {
+          nextActiveFilter.setSelectionRange(activeFilterStart, activeFilterEnd);
+        }
+      }
+    }
+  }
+
+  function renderInventoryHeader(thead, visibleColumns, data) {
+    thead.innerHTML = "";
+
+    const headerRow = document.createElement("tr");
+    headerRow.id = "inventoryTableHeaderRow";
+
+    if (inventorySelectionMode) {
+      const selectTh = document.createElement("th");
+      selectTh.className = "selectColumnHeader";
+
+      const selectAll = document.createElement("input");
+      selectAll.type = "checkbox";
+      selectAll.id = "selectAllInventoryCheckbox";
+
+      const selectableIds = data.map(item => String(item.id));
+
+      selectAll.checked =
+        selectableIds.length > 0 &&
+        selectableIds.every(id => selectedInventoryIds.has(id));
+
+      selectAll.indeterminate =
+        selectableIds.some(id => selectedInventoryIds.has(id)) &&
+        !selectAll.checked;
+
+      selectAll.addEventListener("click", event => {
+        event.stopPropagation();
+      });
+
+      selectAll.addEventListener("change", event => {
+        selectableIds.forEach(id => {
+          if (event.target.checked) {
+            selectedInventoryIds.add(id);
+          } else {
+            selectedInventoryIds.delete(id);
+          }
+        });
+
+        renderInventoryGrid();
+      });
+
+      selectTh.appendChild(selectAll);
+      headerRow.appendChild(selectTh);
+    }
+
+    visibleColumns.forEach(column => {
+      const th = document.createElement("th");
+      th.dataset.columnKey = column.key;
+
+      const inner = document.createElement("div");
+      inner.className = "gridHeaderCellInner";
+
+      const sortBtn = document.createElement("button");
+      sortBtn.type = "button";
+      sortBtn.className = "gridHeaderSortBtn";
+      sortBtn.textContent = createSortLabel(column);
+      sortBtn.disabled = !column.sortable;
+
+      if (column.sortable) {
+        sortBtn.addEventListener("click", () => {
+          if (inventoryGridState.sortKey === column.key) {
+            inventoryGridState.sortDirection =
+              inventoryGridState.sortDirection === "asc" ? "desc" : "asc";
+          } else {
+            inventoryGridState.sortKey = column.key;
+            inventoryGridState.sortDirection = "asc";
+          }
+
+          persistGrid();
+          renderInventoryGrid();
+        });
+      }
+
+      inner.appendChild(sortBtn);
+      th.appendChild(inner);
+      headerRow.appendChild(th);
+    });
+
+    thead.appendChild(headerRow);
+  }
+
+  function renderInventoryGrid() {
+    if (!dom.inventoryTable) return;
+
+    const table = dom.inventoryTable;
+    const thead = table.querySelector("thead");
+    const tbody = table.querySelector("tbody");
+
+    if (!thead || !tbody) return;
+
+    const visibleColumns = inventoryColumns.filter(col => col.visible);
+    const data = getFilteredNormalizedInventory();
+
+    renderInventoryFilterRow(visibleColumns);
+    renderInventoryHeader(thead, visibleColumns, data);
+
+    tbody.innerHTML = "";
+
+    if (!data.length) {
+      const tr = document.createElement("tr");
+      const td = document.createElement("td");
+
+      td.className = "emptyStateCell";
+      td.colSpan = visibleColumns.length + (inventorySelectionMode ? 1 : 0);
+      td.textContent = "No inventory items found.";
+
+      tr.appendChild(td);
+      tbody.appendChild(tr);
+
+      setGridResultCount(dom.inventoryResultCount, 0, "records");
+      refreshInventorySelectionUi();
+      return;
+    }
+
+    data.forEach(item => {
+      const tr = document.createElement("tr");
+      tr.dataset.inventoryId = String(item.id);
+
+      if (isRowSelected(selectedInventoryIds, item.id)) {
+        tr.classList.add("selected");
+      }
+
+      if (inventorySelectionMode) {
+        const selectTd = document.createElement("td");
+        selectTd.className = "selectionCell selectColumnCell";
+
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.className = "gridRowCheckbox";
+        checkbox.checked = isRowSelected(selectedInventoryIds, item.id);
+
+        checkbox.addEventListener("click", event => {
+          event.stopPropagation();
+        });
+
+        checkbox.addEventListener("change", event => {
+          toggleRowSelection(selectedInventoryIds, item.id, event.target.checked);
+          renderInventoryGrid();
+        });
+
+        selectTd.appendChild(checkbox);
+        tr.appendChild(selectTd);
+      }
+
+      visibleColumns.forEach(column => {
+        const td = document.createElement("td");
+        td.textContent = getFormattedCellValue(item, column);
+        tr.appendChild(td);
+      });
+
+      tr.addEventListener("click", async event => {
+        if (event.target.closest("input, button, a, select, textarea")) return;
+
+        if (inventorySelectionMode) {
+          toggleRowSelection(selectedInventoryIds, item.id);
+          renderInventoryGrid();
+          return;
+        }
+
+        await openInventoryProfile(item.id);
+      });
+
+      tbody.appendChild(tr);
+    });
+
+    setGridResultCount(dom.inventoryResultCount, data.length, "records");
+    refreshInventorySelectionUi();
   }
 
   function clearColumnManagerMessage() {
@@ -572,12 +878,7 @@ export async function initInventory() {
     msg.className = `columnManagerMessage ${type}`;
     msg.textContent = message;
 
-    const actionRow = dom.columnManagerList.querySelector(".columnManagerActionRow");
-    if (actionRow) {
-      dom.columnManagerList.insertBefore(msg, actionRow);
-    } else {
-      dom.columnManagerList.appendChild(msg);
-    }
+    dom.columnManagerList.appendChild(msg);
   }
 
   function sanitizeCustomColumnKey(label) {
@@ -598,6 +899,7 @@ export async function initInventory() {
     }
 
     const keyBase = sanitizeCustomColumnKey(label);
+
     if (!keyBase) {
       await showMessageModal("Custom Column", "Enter a valid column name.");
       return;
@@ -606,6 +908,7 @@ export async function initInventory() {
     const existingLabels = new Set(
       inventoryColumns.map(col => String(col.label || "").trim().toLowerCase())
     );
+
     if (existingLabels.has(label.toLowerCase())) {
       await showMessageModal("Custom Column", "A column with that name already exists.");
       return;
@@ -666,6 +969,7 @@ export async function initInventory() {
         col.visible = checkbox.checked;
 
         const visibleCount = inventoryColumns.filter(c => c.visible).length;
+
         if (visibleCount === 0) {
           col.visible = true;
           checkbox.checked = true;
@@ -684,44 +988,14 @@ export async function initInventory() {
       left.appendChild(checkbox);
       left.appendChild(text);
       row.appendChild(left);
+
       dom.columnManagerList.appendChild(row);
     });
-
-    const modeWrap = document.createElement("div");
-    modeWrap.className = "columnManagerModeRow";
-
-    const modeLabel = document.createElement("div");
-    modeLabel.className = "columnManagerModeTitle";
-    modeLabel.textContent = "Filter UI Mode";
-
-    const rowBtn = document.createElement("button");
-    rowBtn.type = "button";
-    rowBtn.textContent = "Top Filter Row";
-    rowBtn.disabled = inventoryFilterUiMode === "row";
-    rowBtn.addEventListener("click", () => {
-      inventoryFilterUiMode = "row";
-      renderInventoryGrid();
-      renderColumnManager();
-    });
-
-    const headerBtn = document.createElement("button");
-    headerBtn.type = "button";
-    headerBtn.textContent = "Header Menus";
-    headerBtn.disabled = inventoryFilterUiMode === "header";
-    headerBtn.addEventListener("click", () => {
-      inventoryFilterUiMode = "header";
-      renderInventoryGrid();
-      renderColumnManager();
-    });
-
-    modeWrap.appendChild(modeLabel);
-    modeWrap.appendChild(rowBtn);
-    modeWrap.appendChild(headerBtn);
-    dom.columnManagerList.appendChild(modeWrap);
   }
 
   function openColumnManager() {
     renderColumnManager();
+
     if (dom.columnManagerPanel) {
       dom.columnManagerPanel.classList.add("show");
     }
@@ -735,6 +1009,7 @@ export async function initInventory() {
 
   function renderHistoryTable(table, entries, columns) {
     if (!table) return;
+
     const tbody = table.querySelector("tbody");
     if (!tbody) return;
 
@@ -743,9 +1018,11 @@ export async function initInventory() {
     if (!entries.length) {
       const tr = document.createElement("tr");
       const td = document.createElement("td");
+
       td.colSpan = columns.length;
       td.className = "emptyStateCell";
       td.textContent = "No history available.";
+
       tr.appendChild(td);
       tbody.appendChild(tr);
       return;
@@ -897,7 +1174,9 @@ export async function initInventory() {
       toggleInventoryButtons("edit");
     } else {
       editingInventoryId = null;
+
       if (dom.inventoryFormTitle) dom.inventoryFormTitle.textContent = "Inventory Item";
+
       clearInventoryForm();
       toggleInventoryButtons("save");
     }
@@ -907,8 +1186,10 @@ export async function initInventory() {
 
   async function openInventoryEditFromProfile() {
     if (viewingInventoryId == null) return;
+
+    const idToEdit = viewingInventoryId;
     closeInventoryProfilePanel();
-    await openInventoryForm(viewingInventoryId);
+    await openInventoryForm(idToEdit);
   }
 
   async function saveInventoryRecord() {
@@ -942,6 +1223,7 @@ export async function initInventory() {
 
     inventory.push(record);
     await persistInventory();
+
     renderInventoryGrid();
     closeInventoryPanel();
   }
@@ -960,6 +1242,7 @@ export async function initInventory() {
     const index = inventory.findIndex(
       entry => String(entry.id) === String(editingInventoryId)
     );
+
     if (index === -1) return;
 
     const existing = getInventoryById(editingInventoryId);
@@ -980,6 +1263,7 @@ export async function initInventory() {
 
     inventory[index] = record;
     await persistInventory();
+
     renderInventoryGrid();
     closeInventoryPanel();
 
@@ -1000,6 +1284,8 @@ export async function initInventory() {
 
     if (editingInventoryId == null) return;
 
+    const idToDelete = editingInventoryId;
+
     const confirmed = await showConfirmModal(
       "Delete Inventory Item",
       "Delete this inventory item?",
@@ -1009,16 +1295,18 @@ export async function initInventory() {
         danger: true
       }
     );
+
     if (!confirmed) return;
 
-    inventory = inventory.filter(
-      entry => String(entry.id) !== String(editingInventoryId)
-    );
+    inventory = inventory.filter(entry => String(entry.id) !== String(idToDelete));
+    selectedInventoryIds.delete(String(idToDelete));
+
     await persistInventory();
+
     renderInventoryGrid();
     closeInventoryPanel();
 
-    if (viewingInventoryId === String(editingInventoryId)) {
+    if (viewingInventoryId === String(idToDelete)) {
       closeInventoryProfilePanel();
     }
   }
@@ -1050,6 +1338,7 @@ export async function initInventory() {
     }
 
     let newQuantity = item.quantity;
+
     if (adjustType === "set") newQuantity = adjustQty;
     if (adjustType === "add") newQuantity = item.quantity + adjustQty;
     if (adjustType === "subtract") newQuantity = item.quantity - adjustQty;
@@ -1057,6 +1346,7 @@ export async function initInventory() {
     newQuantity = Math.max(0, toNumber(newQuantity, 0));
 
     const loggedInUser = getLoggedInUser();
+
     const updatedItem = normalizeInventoryRecord({
       ...item,
       quantity: newQuantity,
@@ -1078,20 +1368,40 @@ export async function initInventory() {
     });
 
     inventory[index] = updatedItem;
+
     await persistInventory();
+
     renderInventoryGrid();
     fillInventoryProfile(updatedItem);
     clearInventoryAdjustmentForm();
   }
 
   function refreshInventorySelectionUi() {
+    const previewBarcodeBtn = byId("previewInventoryBarcodesBtn");
+
     if (dom.deleteSelectedInventoryBtn) {
-      updateSelectionButtonText(
-        dom.deleteSelectedInventoryBtn,
-        inventorySelectionMode,
-        selectedInventoryIds.size,
-        "Delete Selected"
-      );
+      if (inventoryBarcodeSelectionMode) {
+        dom.deleteSelectedInventoryBtn.style.display = "none";
+      } else {
+        dom.deleteSelectedInventoryBtn.style.display = canDeleteInventory() ? "" : "none";
+
+        updateSelectionButtonText(
+          dom.deleteSelectedInventoryBtn,
+          inventorySelectionMode,
+          selectedInventoryIds.size,
+          "Delete Selected"
+        );
+      }
+    }
+
+    if (previewBarcodeBtn) {
+      previewBarcodeBtn.style.display =
+        inventoryBarcodeSelectionMode ? "inline-flex" : "none";
+
+      previewBarcodeBtn.textContent =
+        selectedInventoryIds.size > 0
+          ? `Preview Barcodes (${selectedInventoryIds.size})`
+          : "Preview Barcodes";
     }
 
     if (dom.cancelInventorySelectionBtn) {
@@ -1105,15 +1415,23 @@ export async function initInventory() {
     renderInventoryGrid();
   }
 
-  function exitInventorySelectionMode(clearAll = false) {
+  function exitInventorySelectionMode(clear = true) {
     inventorySelectionMode = false;
-    if (clearAll) {
-      selectedInventoryIds = new Set();
+    inventoryBarcodeSelectionMode = false;
+
+    if (clear) {
+      clearSelections(selectedInventoryIds);
     }
+
     renderInventoryGrid();
   }
 
   async function deleteSelectedInventory() {
+    if (inventoryBarcodeSelectionMode) {
+      await previewSelectedInventoryBarcodes();
+      return;
+    }
+
     if (!(await requirePermission(
       canDeleteInventory,
       "Permission Required",
@@ -1128,7 +1446,10 @@ export async function initInventory() {
     }
 
     if (!selectedInventoryIds.size) {
-      await showMessageModal("Delete Selected", "Select one or more inventory items first.");
+      await showMessageModal(
+        "Delete Selected",
+        "Select one or more inventory items to delete."
+      );
       return;
     }
 
@@ -1141,31 +1462,34 @@ export async function initInventory() {
         danger: true
       }
     );
+
     if (!confirmed) return;
 
-    inventory = inventory.filter(item => !selectedInventoryIds.has(String(item.id)));
-    await persistInventory();
+    const idsToDelete = new Set([...selectedInventoryIds].map(String));
 
-    selectedInventoryIds = new Set();
-    inventorySelectionMode = false;
+    inventory = inventory.filter(item => !idsToDelete.has(String(item.id)));
 
-    if (viewingInventoryId && !inventory.some(item => String(item.id) === String(viewingInventoryId))) {
+    if (viewingInventoryId != null && idsToDelete.has(String(viewingInventoryId))) {
       closeInventoryProfilePanel();
     }
-    if (editingInventoryId && !inventory.some(item => String(item.id) === String(editingInventoryId))) {
+
+    if (editingInventoryId != null && idsToDelete.has(String(editingInventoryId))) {
       closeInventoryPanel();
     }
+
+    clearSelections(selectedInventoryIds);
+    inventorySelectionMode = false;
+    inventoryBarcodeSelectionMode = false;
+
+    await persistInventory();
 
     renderInventoryGrid();
   }
 
   function clearInventoryFilters() {
-    inventoryGridState = {
-      ...inventoryGridState,
-      globalSearch: "",
-      filters: {},
-      headerMenuOpenFor: null
-    };
+    inventoryGridState.globalSearch = "";
+    inventoryGridState.filters = {};
+    inventoryGridState.headerMenuOpenFor = null;
 
     if (dom.inventoryGlobalSearch) {
       dom.inventoryGlobalSearch.value = "";
@@ -1201,7 +1525,8 @@ export async function initInventory() {
 
   function exportInventoryData() {
     const rows = buildExportRows();
-    const headers = Object.keys(rows[0] || {
+
+    const fallbackHeaders = {
       id: "",
       partNumber: "",
       name: "",
@@ -1221,7 +1546,9 @@ export async function initInventory() {
       profileNotes: "",
       lastPurchasedAt: "",
       lastIssuedAt: ""
-    });
+    };
+
+    const headers = Object.keys(rows[0] || fallbackHeaders);
 
     const csv = [
       headers.join(","),
@@ -1239,12 +1566,127 @@ export async function initInventory() {
     const blob = new Blob([csv], { type: "text/csv;charset=utf-8;" });
     const url = URL.createObjectURL(blob);
     const link = document.createElement("a");
+
     link.href = url;
     link.download = `inventory-export-${new Date().toISOString().slice(0, 10)}.csv`;
+
     document.body.appendChild(link);
     link.click();
     link.remove();
+
     URL.revokeObjectURL(url);
+  }
+
+  function parseCsvLine(line) {
+    const values = [];
+    let current = "";
+    let inQuotes = false;
+
+    for (let i = 0; i < line.length; i += 1) {
+      const char = line[i];
+      const next = line[i + 1];
+
+      if (char === '"' && inQuotes && next === '"') {
+        current += '"';
+        i += 1;
+        continue;
+      }
+
+      if (char === '"') {
+        inQuotes = !inQuotes;
+        continue;
+      }
+
+      if (char === "," && !inQuotes) {
+        values.push(current);
+        current = "";
+        continue;
+      }
+
+      current += char;
+    }
+
+    values.push(current);
+
+    return values.map(value => value.trim());
+  }
+
+  async function readImportRows(file) {
+    const extension = String(file.name || "").split(".").pop().toLowerCase();
+
+    if (extension === "xlsx" || extension === "xls") {
+      if (!window.XLSX) {
+        throw new Error("XLSX library is not loaded.");
+      }
+
+      const arrayBuffer = await file.arrayBuffer();
+      const workbook = window.XLSX.read(arrayBuffer, { type: "array" });
+      const sheetName = workbook.SheetNames[0];
+      const sheet = workbook.Sheets[sheetName];
+
+      return window.XLSX.utils.sheet_to_json(sheet, { defval: "" });
+    }
+
+    const text = await file.text();
+    const lines = text.split(/\r?\n/).filter(line => line.trim());
+
+    if (lines.length < 2) return [];
+
+    const headers = parseCsvLine(lines[0]).map(header =>
+      header.trim().replace(/^"|"$/g, "")
+    );
+
+    return lines.slice(1).map(line => {
+      const values = parseCsvLine(line);
+
+      return headers.reduce((record, header, index) => {
+        record[header] = values[index] ?? "";
+        return record;
+      }, {});
+    });
+  }
+
+  function mapImportRecord(record = {}) {
+    const normalizedKeys = Object.keys(record).reduce((acc, key) => {
+      acc[normalizeLower(key).replace(/\s+/g, "")] = record[key];
+      return acc;
+    }, {});
+
+    const get = (...keys) => {
+      for (const key of keys) {
+        const normalizedKey = normalizeLower(key).replace(/\s+/g, "");
+
+        if (normalizedKey in normalizedKeys) {
+          return normalizedKeys[normalizedKey];
+        }
+      }
+
+      return "";
+    };
+
+    return normalizeInventoryRecord({
+      id: get("id"),
+      partNumber: get("partNumber", "part #", "part", "part no", "part number"),
+      name: get("name", "itemName", "item name", "part name", "description"),
+      category: get("category", "type"),
+      quantity: get("quantity", "qty"),
+      unitCost: get("unitCost", "unit cost", "cost"),
+      location: get("location"),
+      vendor: get("vendor"),
+      reorderPoint: get("reorderPoint", "reorder point", "min", "minimum"),
+      reorderQuantity: get("reorderQuantity", "reorder qty", "reorder quantity"),
+      maximumQuantity: get("maximumQuantity", "max qty", "maximum quantity", "max"),
+      binLocation: get("binLocation", "bin location", "bin", "shelf"),
+      manufacturer: get("manufacturer"),
+      partType: get("partType", "part type"),
+      uom: get("uom", "unit", "unit of measure"),
+      notes: get("notes"),
+      profileNotes: get("profileNotes", "profile notes"),
+      lastPurchasedAt: get("lastPurchasedAt", "last purchased"),
+      lastIssuedAt: get("lastIssuedAt", "last issued"),
+      createdAt: get("createdAt", "created at"),
+      updatedAt: new Date().toISOString()
+    });
   }
 
   async function handleInventoryImport(event) {
@@ -1260,87 +1702,39 @@ export async function initInventory() {
     if (!file) return;
 
     try {
-      const text = await file.text();
-      const lines = text.split(/\r?\n/).filter(line => line.trim());
-      if (lines.length < 2) {
-        await showMessageModal("Import Inventory", "The selected file does not contain any inventory rows.");
+      const rows = await readImportRows(file);
+
+      if (!rows.length) {
+        await showMessageModal(
+          "Import Inventory",
+          "The selected file does not contain any inventory rows."
+        );
         return;
       }
-
-      const headers = lines[0]
-        .split(",")
-        .map(cell => cell.trim().replace(/^"|"$/g, ""));
-
-      const parsedRecords = lines.slice(1).map(line => {
-        const values = [];
-        let current = "";
-        let inQuotes = false;
-
-        for (let i = 0; i < line.length; i += 1) {
-          const char = line[i];
-          const next = line[i + 1];
-
-          if (char === '"' && inQuotes && next === '"') {
-            current += '"';
-            i += 1;
-            continue;
-          }
-
-          if (char === '"') {
-            inQuotes = !inQuotes;
-            continue;
-          }
-
-          if (char === "," && !inQuotes) {
-            values.push(current);
-            current = "";
-            continue;
-          }
-
-          current += char;
-        }
-
-        values.push(current);
-
-        const row = {};
-        headers.forEach((header, index) => {
-          row[header] = values[index] ?? "";
-        });
-        return normalizeInventoryRecord({
-          ...row,
-          quantity: row.quantity,
-          unitCost: row.unitCost,
-          reorderPoint: row.reorderPoint,
-          reorderQuantity: row.reorderQuantity,
-          maximumQuantity: row.maximumQuantity,
-          createdAt: row.createdAt || new Date().toISOString(),
-          purchaseHistory: [],
-          issueHistory: [],
-          qtyAdjustmentHistory: []
-        });
-      });
 
       let importedCount = 0;
       let updatedCount = 0;
 
-      parsedRecords.forEach(record => {
-        const duplicateIndex = inventory.findIndex(item =>
-          buildInventoryDuplicateKey(normalizeInventoryRecord(item)) ===
-          buildInventoryDuplicateKey(record)
-        );
+      rows.forEach(row => {
+        const record = mapImportRecord(row);
+
+        if (!normalizeText(record.name) && !normalizeText(record.partNumber)) {
+          return;
+        }
+
+        const duplicateIndex = inventory.findIndex(item => {
+          const normalized = normalizeInventoryRecord(item);
+          return buildInventoryDuplicateKey(normalized) === buildInventoryDuplicateKey(record);
+        });
 
         if (duplicateIndex >= 0) {
-          const existing = normalizeInventoryRecord(inventory[duplicateIndex]);
           inventory[duplicateIndex] = normalizeInventoryRecord({
-            ...existing,
+            ...inventory[duplicateIndex],
             ...record,
-            id: existing.id,
-            purchaseHistory: existing.purchaseHistory || [],
-            issueHistory: existing.issueHistory || [],
-            qtyAdjustmentHistory: existing.qtyAdjustmentHistory || [],
-            createdAt: existing.createdAt || record.createdAt || new Date().toISOString(),
+            id: inventory[duplicateIndex].id,
             updatedAt: new Date().toISOString()
           });
+
           updatedCount += 1;
         } else {
           inventory.push(normalizeInventoryRecord({
@@ -1349,6 +1743,7 @@ export async function initInventory() {
             createdAt: record.createdAt || new Date().toISOString(),
             updatedAt: new Date().toISOString()
           }));
+
           importedCount += 1;
         }
       });
@@ -1370,126 +1765,190 @@ export async function initInventory() {
     }
   }
 
-  function renderInventoryGrid() {
-    if (!dom.inventoryTable) return;
+  function escapeHtml(value) {
+    return String(value ?? "")
+      .replace(/&/g, "&amp;")
+      .replace(/</g, "&lt;")
+      .replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;")
+      .replace(/'/g, "&#039;");
+  }
 
-    const table = dom.inventoryTable;
-    const thead = table.querySelector("thead");
-    const tbody = table.querySelector("tbody");
-    if (!thead || !tbody) return;
+  function cleanBarcodeValue(value) {
+    const clean = String(value || "")
+      .trim()
+      .toUpperCase()
+      .replace(/[^A-Z0-9\-.$/+% ]/g, "");
 
-    const visibleColumns = inventoryColumns.filter(col => col.visible);
-    const data = getFilteredNormalizedInventory();
+    return clean || "NO-PART";
+  }
 
-    thead.innerHTML = "";
-    tbody.innerHTML = "";
+  function getBarcodeLabelSizeClass() {
+    const size = byId("inventoryBarcodeLabelSize")?.value || "2x1";
+    return `barcodeSize-${size}`;
+  }
 
-    renderGridHeaderGeneric({
-      tableHead: thead,
-      columns: visibleColumns,
-      gridState: inventoryGridState,
-      onSort: ({ key, direction }) => {
-        inventoryGridState.sortKey = key;
-        inventoryGridState.sortDirection = direction;
-        persistGrid();
-        renderInventoryGrid();
-      },
-      onFilterChange: ({ key, value }) => {
-        inventoryGridState.filters = {
-          ...inventoryGridState.filters,
-          [key]: value
-        };
-        persistGrid();
-        renderInventoryGrid();
-      },
-      onHeaderMenuToggle: key => {
-        inventoryGridState.headerMenuOpenFor =
-          inventoryGridState.headerMenuOpenFor === key ? null : key;
-        persistGrid();
-        renderInventoryGrid();
-      },
-      buildColumnFilters: column =>
-        buildColumnFiltersGeneric(
-          getNormalizedInventory(),
-          column,
-          inventoryColumns,
-          inventoryGridState
-        ),
-      filterUiMode: inventoryFilterUiMode,
-      includeSelectionColumn: inventorySelectionMode
+  function getSelectedBarcodeItems() {
+    const selectedIds = new Set([...selectedInventoryIds].map(String));
+
+    return getNormalizedInventory().filter(item =>
+      selectedIds.has(String(item.id))
+    );
+  }
+
+  function buildBarcodeLabelHtml(item) {
+    const partName = String(item.name || item.itemName || "Unnamed Part").trim();
+    const partNumber = String(item.partNumber || "NO-PART").trim();
+    const location = String(item.location || "No Location").trim();
+    const price = formatCurrency(item.unitCost || 0);
+    const barcodeValue = cleanBarcodeValue(partNumber);
+
+    return `
+      <div class="inventoryBarcodeLabel">
+        <div class="barcodeLabelTop">
+          <div class="barcodePartName">${escapeHtml(partName)}</div>
+          <div class="barcodePrice">${escapeHtml(price)}</div>
+        </div>
+
+        <div class="barcodeMetaRow">
+          <span>Part #</span>
+          <strong>${escapeHtml(partNumber)}</strong>
+        </div>
+
+        <div class="barcodeMetaRow">
+          <span>Location</span>
+          <strong>${escapeHtml(location)}</strong>
+        </div>
+
+        <div class="barcodeImageWrap">
+          <svg
+            class="barcodeSvg"
+            data-barcode-value="${escapeHtml(barcodeValue)}"
+            aria-label="${escapeHtml(barcodeValue)}"
+          ></svg>
+        </div>
+
+        <div class="barcodeHumanText">${escapeHtml(barcodeValue)}</div>
+      </div>
+    `;
+  }
+
+  function generateBarcodeSvgs() {
+    const barcodeType = byId("inventoryBarcodeType")?.value || "CODE128";
+
+    const barcodeSvgs = document.querySelectorAll(
+      "#inventoryBarcodePreview .barcodeSvg"
+    );
+
+    barcodeSvgs.forEach(svg => {
+      const value = cleanBarcodeValue(svg.dataset.barcodeValue || "");
+
+      if (window.JsBarcode) {
+        try {
+          window.JsBarcode(svg, value, {
+            format: barcodeType,
+            displayValue: false,
+            margin: 0,
+            width: 1.4,
+            height: 36
+          });
+        } catch (error) {
+          console.warn("Failed to render JsBarcode. Falling back to text barcode.", error);
+          svg.outerHTML = `<div class="barcodeFallback">${escapeHtml(value)}</div>`;
+        }
+      } else {
+        svg.outerHTML = `<div class="barcodeFallback">${escapeHtml(value)}</div>`;
+      }
     });
+  }
 
-    if (!data.length) {
-      const tr = document.createElement("tr");
-      const td = document.createElement("td");
-      td.className = "emptyStateCell";
-      td.colSpan = visibleColumns.length + (inventorySelectionMode ? 1 : 0);
-      td.textContent = "No inventory items found.";
-      tr.appendChild(td);
-      tbody.appendChild(tr);
+  function renderInventoryBarcodePreview() {
+    const preview = byId("inventoryBarcodePreview");
+    if (!preview) return;
 
-      setGridResultCount(dom.inventoryResultCount, 0, "records");
-      refreshInventorySelectionUi();
+    const items = getSelectedBarcodeItems();
+    const copies = Math.max(1, Number(byId("inventoryBarcodeCopiesInput")?.value || 1));
+    const sizeClass = getBarcodeLabelSizeClass();
+
+    preview.className = `barcodePreviewSheet ${sizeClass}`;
+    preview.innerHTML = "";
+
+    if (!items.length) {
+      preview.innerHTML = `
+        <div class="emptyBarcodePreview">
+          Select one or more inventory items to preview barcodes.
+        </div>
+      `;
       return;
     }
 
-    data.forEach(item => {
-      const tr = document.createElement("tr");
-      tr.dataset.inventoryId = String(item.id);
-
-      if (inventorySelectionMode) {
-        const selectTd = document.createElement("td");
-        selectTd.className = "selectionCell";
-
-        const checkbox = document.createElement("input");
-        checkbox.type = "checkbox";
-        checkbox.checked = isRowSelected(selectedInventoryIds, item.id);
-
-        checkbox.addEventListener("click", event => {
-          event.stopPropagation();
-        });
-
-        checkbox.addEventListener("change", event => {
-          toggleRowSelection(selectedInventoryIds, item.id, event.target.checked);
-          refreshInventorySelectionUi();
-        });
-
-        selectTd.appendChild(checkbox);
-        tr.appendChild(selectTd);
+    items.forEach(item => {
+      for (let copy = 0; copy < copies; copy += 1) {
+        const wrapper = document.createElement("div");
+        wrapper.className = "barcodePreviewItem";
+        wrapper.innerHTML = buildBarcodeLabelHtml(item);
+        preview.appendChild(wrapper);
       }
-
-      visibleColumns.forEach(column => {
-        const td = document.createElement("td");
-        const rawValue = item[column.key];
-
-        if (column.key === "unitCost") {
-          td.textContent = formatCurrency(rawValue);
-        } else if (column.key === "lastPurchasedAt" || column.key === "lastIssuedAt") {
-          td.textContent = formatDate(rawValue);
-        } else {
-          td.textContent = normalizeCellValue(rawValue);
-        }
-
-        tr.appendChild(td);
-      });
-
-      tr.addEventListener("click", async event => {
-        if (event.target.closest("input, button, a, select, textarea")) return;
-
-        if (inventorySelectionMode) {
-          toggleRowSelection(selectedInventoryIds, item.id);
-          renderInventoryGrid();
-          return;
-        }
-
-        await openInventoryProfile(item.id);
-      });
-
-      tbody.appendChild(tr);
     });
 
-    setGridResultCount(dom.inventoryResultCount, data.length, "records");
-    refreshInventorySelectionUi();
+    generateBarcodeSvgs();
+  }
+
+  function openInventoryBarcodePreview() {
+    const modal = byId("inventoryBarcodeModal");
+
+    if (!modal) {
+      console.warn("Missing #inventoryBarcodeModal in index.html");
+      showMessageModal(
+        "Barcode Preview",
+        "The barcode preview modal is missing from index.html."
+      );
+      return;
+    }
+
+    renderInventoryBarcodePreview();
+    modal.classList.add("show");
+  }
+
+  function closeInventoryBarcodePreview() {
+    byId("inventoryBarcodeModal")?.classList.remove("show");
+  }
+
+  async function startInventoryBarcodeSelection() {
+    inventoryBarcodeSelectionMode = true;
+    inventorySelectionMode = true;
+    selectedInventoryIds = new Set();
+
+    renderInventoryGrid();
+
+    await showMessageModal(
+      "Print Barcodes",
+      "Select the inventory items you want to print barcode labels for, then click Preview Barcodes."
+    );
+  }
+
+  async function previewSelectedInventoryBarcodes() {
+    if (!selectedInventoryIds.size) {
+      await showMessageModal(
+        "Barcode Preview",
+        "Select one or more inventory items first."
+      );
+      return;
+    }
+
+    openInventoryBarcodePreview();
+  }
+
+  function printInventoryBarcodePreview() {
+    const items = getSelectedBarcodeItems();
+
+    if (!items.length) {
+      showMessageModal("Print Barcodes", "Select one or more inventory items first.");
+      return;
+    }
+
+    renderInventoryBarcodePreview();
+    window.print();
   }
 
   async function refreshInventoryFromRemote() {
@@ -1500,6 +1959,7 @@ export async function initInventory() {
         const stillExists = inventory.some(
           item => String(item.id) === String(editingInventoryId)
         );
+
         if (!stillExists) {
           closeInventoryPanel();
         }
@@ -1507,6 +1967,7 @@ export async function initInventory() {
 
       if (viewingInventoryId != null) {
         const item = getInventoryById(viewingInventoryId);
+
         if (!item) {
           closeInventoryProfilePanel();
         } else if (dom.inventoryProfilePanel?.classList.contains("show")) {
@@ -1598,6 +2059,66 @@ export async function initInventory() {
       dom.clearInventoryFiltersBtn.addEventListener("click", () => {
         closeInventoryOptionsDropdown();
         clearInventoryFilters();
+      });
+    }
+
+    const printInventoryBarcodesBtn = byId("printInventoryBarcodesBtn");
+    if (printInventoryBarcodesBtn) {
+      printInventoryBarcodesBtn.addEventListener("click", () => {
+        closeInventoryOptionsDropdown();
+
+        if (inventoryBarcodeSelectionMode && selectedInventoryIds.size > 0) {
+          openInventoryBarcodePreview();
+          return;
+        }
+
+        startInventoryBarcodeSelection();
+      });
+    }
+
+    const previewInventoryBarcodesBtn = byId("previewInventoryBarcodesBtn");
+    if (previewInventoryBarcodesBtn) {
+      previewInventoryBarcodesBtn.addEventListener("click", () => {
+        previewSelectedInventoryBarcodes();
+      });
+    }
+
+    const closeInventoryBarcodeModalBtn = byId("closeInventoryBarcodeModalBtn");
+    if (closeInventoryBarcodeModalBtn) {
+      closeInventoryBarcodeModalBtn.addEventListener("click", closeInventoryBarcodePreview);
+    }
+
+    const refreshInventoryBarcodePreviewBtn = byId("refreshInventoryBarcodePreviewBtn");
+    if (refreshInventoryBarcodePreviewBtn) {
+      refreshInventoryBarcodePreviewBtn.addEventListener("click", renderInventoryBarcodePreview);
+    }
+
+    const printInventoryBarcodePreviewBtn = byId("printInventoryBarcodePreviewBtn");
+    if (printInventoryBarcodePreviewBtn) {
+      printInventoryBarcodePreviewBtn.addEventListener("click", printInventoryBarcodePreview);
+    }
+
+    const inventoryBarcodeCopiesInput = byId("inventoryBarcodeCopiesInput");
+    if (inventoryBarcodeCopiesInput) {
+      inventoryBarcodeCopiesInput.addEventListener("input", renderInventoryBarcodePreview);
+    }
+
+    const inventoryBarcodeLabelSize = byId("inventoryBarcodeLabelSize");
+    if (inventoryBarcodeLabelSize) {
+      inventoryBarcodeLabelSize.addEventListener("change", renderInventoryBarcodePreview);
+    }
+
+    const inventoryBarcodeType = byId("inventoryBarcodeType");
+    if (inventoryBarcodeType) {
+      inventoryBarcodeType.addEventListener("change", renderInventoryBarcodePreview);
+    }
+
+    const inventoryBarcodeModal = byId("inventoryBarcodeModal");
+    if (inventoryBarcodeModal) {
+      inventoryBarcodeModal.addEventListener("click", event => {
+        if (event.target === inventoryBarcodeModal) {
+          closeInventoryBarcodePreview();
+        }
       });
     }
 
@@ -1698,6 +2219,7 @@ export async function initInventory() {
 
   bindEventsOnce();
   renderInventoryGrid();
+  applyInventoryPermissionUi();
 
   return {
     refresh: refreshInventoryFromRemote,
@@ -1705,6 +2227,7 @@ export async function initInventory() {
     renderInventoryTable: renderInventoryGrid,
     renderInventoryGrid,
     openInventoryForm,
-    openInventoryProfile
+    openInventoryProfile,
+    openInventoryBarcodePreview
   };
 }

@@ -4,7 +4,9 @@ import {
   loadEquipment,
   loadWorkOrders,
   loadPurchaseOrders,
+  loadInventory,
   loadSettings,
+  saveSettings,
   loadUsers,
   getLoggedInUsername,
   getLoggedInUser
@@ -24,53 +26,52 @@ export async function initDashboard() {
   const DEFAULT_WIDGET_ORDER = [
     "equipmentServices",
     "weatherSummary",
-    "recentActivity",
     "vehicleStatus",
-    "activeWorkOrders",
     "openIssues",
-    "serviceCosts",
-    "totalCosts"
+    "activeWorkOrders",
+    "recentActivity",
+    "inventoryAlerts",
+    "serviceCosts"
   ];
 
   const DEFAULT_WIDGET_SPANS = {
-    equipmentServices: 12,
+    equipmentServices: 8,
     weatherSummary: 4,
-    recentActivity: 6,
-    vehicleStatus: 6,
-    activeWorkOrders: 4,
+    vehicleStatus: 4,
     openIssues: 4,
-    serviceCosts: 4,
-    totalCosts: 4
+    activeWorkOrders: 4,
+    recentActivity: 4,
+    inventoryAlerts: 4,
+    serviceCosts: 4
   };
 
   const DEFAULT_VISIBLE_WIDGETS = {
     equipmentServices: true,
     weatherSummary: true,
-    recentActivity: true,
     vehicleStatus: true,
-    activeWorkOrders: true,
     openIssues: true,
-    serviceCosts: true,
-    totalCosts: true
+    activeWorkOrders: true,
+    recentActivity: true,
+    inventoryAlerts: true,
+    serviceCosts: true
   };
 
   const WIDGET_LABELS = {
-    equipmentServices: "Equipment Services",
+    equipmentServices: "Equipment Services / PM Compliance",
     weatherSummary: "Weather",
-    recentActivity: "Recent Comments / Activity",
     vehicleStatus: "Vehicle Status",
-    activeWorkOrders: "Active Work Orders",
     openIssues: "Open Issues",
-    serviceCosts: "Service Costs",
-    totalCosts: "Total Costs"
+    activeWorkOrders: "Active Work Orders",
+    recentActivity: "Recent Activity",
+    inventoryAlerts: "Inventory Alerts",
+    serviceCosts: "Service Costs"
   };
-
-  let draggedWidgetId = null;
 
   let dashboardCache = {
     equipmentList: [],
     workOrders: [],
     purchaseOrders: [],
+    inventory: [],
     settings: {
       companyName: "",
       defaultLocation: "",
@@ -85,9 +86,10 @@ export async function initDashboard() {
   let dueServicesActiveCategory = "Trucks";
 
   let dueServicesEventsBound = false;
-  let layoutEventsBound = false;
-  let syncEventsBound = false;
-  let editorEventsBound = false;
+let syncEventsBound = false;
+let editorEventsBound = false;
+let searchEventsBound = false;
+let weatherZipEventsBound = false;
 
   function safeArray(value) {
     return Array.isArray(value) ? value : [];
@@ -108,10 +110,38 @@ export async function initDashboard() {
 
   function createEmptyMessage(text) {
     const div = document.createElement("div");
-    div.className = "muted";
+    div.className = "muted dashboardEmptyMessage";
     div.textContent = text;
     return div;
   }
+
+  function createEmptyTableRow(text, colSpan = 5) {
+    const row = document.createElement("tr");
+    row.innerHTML = `
+      <td colspan="${colSpan}" class="dashboardEmptyTableCell">
+        ${escapeHtml(text)}
+      </td>
+    `;
+    return row;
+  }
+
+  function setText(idOrElement, value) {
+    const el =
+      typeof idOrElement === "string"
+        ? document.getElementById(idOrElement)
+        : idOrElement;
+
+    if (el) {
+      el.textContent = String(value ?? "");
+    }
+  }
+
+  function normalizeZipInput(value) {
+  return String(value || "")
+    .trim()
+    .replace(/[^\d]/g, "")
+    .slice(0, 5);
+}
 
   function getCurrentPermissions() {
     const loggedInUser = getLoggedInUser();
@@ -127,6 +157,7 @@ export async function initDashboard() {
       dashboardView: true,
       equipmentView: true,
       workOrdersView: true,
+      inventoryView: true,
       purchaseOrdersAccess: true,
       ...permissions
     };
@@ -142,6 +173,10 @@ export async function initDashboard() {
 
   function canViewWorkOrders() {
     return !!getCurrentPermissions().workOrdersView;
+  }
+
+  function canViewInventory() {
+    return !!getCurrentPermissions().inventoryView;
   }
 
   function canViewPurchaseOrders() {
@@ -169,12 +204,6 @@ export async function initDashboard() {
     if (!grid) return [];
 
     return Array.from(grid.querySelectorAll("[data-widget-id]"));
-  }
-
-  function getWidgetById(widgetId) {
-    return getDashboardWidgets().find(
-      widget => String(widget.dataset.widgetId || "") === String(widgetId || "")
-    );
   }
 
   function getDueServicesTargets() {
@@ -223,16 +252,6 @@ export async function initDashboard() {
     return { section, summary };
   }
 
-  function loadDashboardLayout() {
-    try {
-      const parsed = JSON.parse(localStorage.getItem(DASHBOARD_LAYOUT_KEY) || "{}");
-      return parsed && typeof parsed === "object" ? parsed : {};
-    } catch (error) {
-      console.error("Unable to load dashboard layout:", error);
-      return {};
-    }
-  }
-
   function loadDashboardWidgetVisibility() {
     try {
       const parsed = JSON.parse(localStorage.getItem(DASHBOARD_WIDGETS_KEY) || "{}");
@@ -256,33 +275,12 @@ export async function initDashboard() {
     );
   }
 
-  function persistCurrentDashboardLayout() {
-    const grid = dom.dashboardGrid || document.getElementById("dashboardGrid");
-    if (!grid) return;
-
-    const widgets = getDashboardWidgets();
-    const order = widgets.map(widget => String(widget.dataset.widgetId || "")).filter(Boolean);
-    const spans = {};
-
-    widgets.forEach(widget => {
-      const widgetId = String(widget.dataset.widgetId || "");
-      const span = Number(widget.dataset.span || widget.dataset.widgetSpan || 4) || 4;
-      if (widgetId) spans[widgetId] = span;
-    });
-
-    localStorage.setItem(
-      DASHBOARD_LAYOUT_KEY,
-      JSON.stringify({
-        order,
-        spans
-      })
-    );
-  }
-
   function getSafeSpan(span) {
     const numeric = Number(span) || 4;
+
     if (numeric <= 4) return 4;
     if (numeric <= 6) return 6;
+    if (numeric <= 8) return 8;
     return 12;
   }
 
@@ -298,10 +296,11 @@ export async function initDashboard() {
       "widgetSpan2",
       "widgetSpan4",
       "widgetSpan6",
+      "widgetSpan8",
       "widgetSpan12"
     );
-    widget.classList.add(`widgetSpan${safeSpan}`);
 
+    widget.classList.add(`widgetSpan${safeSpan}`);
     widget.style.gridColumn = `span ${safeSpan}`;
   }
 
@@ -320,30 +319,20 @@ export async function initDashboard() {
     const grid = dom.dashboardGrid || document.getElementById("dashboardGrid");
     if (!grid) return;
 
-    const layout = loadDashboardLayout();
-    const order = safeArray(layout.order);
-    const spans = safeObject(layout.spans);
-
     const widgetMap = new Map();
+
     getDashboardWidgets().forEach(widget => {
       const widgetId = String(widget.dataset.widgetId || "");
       if (widgetId) widgetMap.set(widgetId, widget);
     });
 
-    const orderedIds = [
-      ...order.filter(id => widgetMap.has(id)),
-      ...DEFAULT_WIDGET_ORDER.filter(id => widgetMap.has(id) && !order.includes(id)),
-      ...Array.from(widgetMap.keys()).filter(
-        id => !order.includes(id) && !DEFAULT_WIDGET_ORDER.includes(id)
-      )
-    ];
-
-    orderedIds.forEach(widgetId => {
+    DEFAULT_WIDGET_ORDER.forEach(widgetId => {
       const widget = widgetMap.get(widgetId);
       if (!widget) return;
 
       grid.appendChild(widget);
-      applyWidgetSpan(widget, spans[widgetId] ?? DEFAULT_WIDGET_SPANS[widgetId] ?? 4);
+      applyWidgetSpan(widget, DEFAULT_WIDGET_SPANS[widgetId] ?? 4);
+      widget.removeAttribute("draggable");
     });
 
     applyWidgetVisibility();
@@ -358,23 +347,11 @@ export async function initDashboard() {
       applyWidgetSpan(widget, DEFAULT_WIDGET_SPANS[widgetId] ?? 4);
       widget.hidden = false;
       widget.style.display = "";
+      widget.removeAttribute("draggable");
     });
 
     applyDashboardLayout();
     renderDashboardEditorList();
-  }
-
-  function moveWidgetBefore(sourceId, targetId) {
-    const grid = dom.dashboardGrid || document.getElementById("dashboardGrid");
-    if (!grid) return;
-
-    const sourceWidget = getWidgetById(sourceId);
-    const targetWidget = getWidgetById(targetId);
-
-    if (!sourceWidget || !targetWidget || sourceWidget === targetWidget) return;
-
-    grid.insertBefore(sourceWidget, targetWidget);
-    persistCurrentDashboardLayout();
   }
 
   function openDashboardEditor() {
@@ -406,9 +383,9 @@ export async function initDashboard() {
     const visibility = loadDashboardWidgetVisibility();
     const widgets = getDashboardWidgets();
 
-    const orderedWidgetIds = widgets
-      .map(widget => String(widget.dataset.widgetId || ""))
-      .filter(Boolean);
+    const orderedWidgetIds = DEFAULT_WIDGET_ORDER.filter(widgetId =>
+      widgets.some(widget => String(widget.dataset.widgetId || "") === widgetId)
+    );
 
     list.innerHTML = "";
 
@@ -430,7 +407,7 @@ export async function initDashboard() {
 
       const hint = document.createElement("span");
       hint.className = "dashboardEditorOptionHint";
-      hint.textContent = `Widget ID: ${widgetId}`;
+      hint.textContent = "Show this dashboard widget";
 
       textWrap.appendChild(title);
       textWrap.appendChild(hint);
@@ -522,71 +499,29 @@ export async function initDashboard() {
     });
   }
 
-  function bindLayoutEvents() {
-    if (layoutEventsBound) return;
-    layoutEventsBound = true;
+  function bindDashboardSearchEvents() {
+    if (searchEventsBound) return;
+    searchEventsBound = true;
 
-    const grid = dom.dashboardGrid || document.getElementById("dashboardGrid");
-    if (!grid) return;
+    const searchInput = document.getElementById("dashboardSearchInput");
+    if (!searchInput) return;
 
-    getDashboardWidgets().forEach(widget => {
-      widget.setAttribute("draggable", "true");
-
-      widget.addEventListener("dragstart", event => {
-        draggedWidgetId = String(widget.dataset.widgetId || "");
-        widget.classList.add("dashboardWidgetDragging");
-
-        if (event.dataTransfer) {
-          event.dataTransfer.effectAllowed = "move";
-          event.dataTransfer.setData("text/plain", draggedWidgetId);
-        }
-      });
-
-      widget.addEventListener("dragend", () => {
-        widget.classList.remove("dashboardWidgetDragging");
-        draggedWidgetId = null;
-
-        getDashboardWidgets().forEach(item => {
-          item.classList.remove("dashboardWidgetDragOver");
-        });
-      });
-
-      widget.addEventListener("dragover", event => {
-        event.preventDefault();
-
-        const currentId = String(widget.dataset.widgetId || "");
-        if (!draggedWidgetId || !currentId || draggedWidgetId === currentId) return;
-
-        widget.classList.add("dashboardWidgetDragOver");
-      });
-
-      widget.addEventListener("dragleave", () => {
-        widget.classList.remove("dashboardWidgetDragOver");
-      });
-
-      widget.addEventListener("drop", event => {
-        event.preventDefault();
-        widget.classList.remove("dashboardWidgetDragOver");
-
-        const targetId = String(widget.dataset.widgetId || "");
-        if (!draggedWidgetId || !targetId || draggedWidgetId === targetId) return;
-
-        moveWidgetBefore(draggedWidgetId, targetId);
-      });
+    searchInput.addEventListener("input", () => {
+      renderRecentActivity(dashboardCache.workOrders);
+      renderInventoryAlerts(dashboardCache.inventory);
+      renderDueServicesSection(dashboardCache.equipmentList);
     });
+  }
 
-    grid.addEventListener("click", event => {
-      const resizeBtn = event.target.closest("[data-resize-widget][data-span]");
-      if (!resizeBtn) return;
+  function getDashboardSearchTerm() {
+    return normalizeLower(document.getElementById("dashboardSearchInput")?.value || "");
+  }
 
-      const widgetId = String(resizeBtn.dataset.resizeWidget || "");
-      const nextSpan = Number(resizeBtn.dataset.span || 4) || 4;
-      const widget = getWidgetById(widgetId);
-      if (!widget) return;
+  function itemMatchesSearch(...values) {
+    const searchTerm = getDashboardSearchTerm();
+    if (!searchTerm) return true;
 
-      applyWidgetSpan(widget, nextSpan);
-      persistCurrentDashboardLayout();
-    });
+    return values.some(value => normalizeLower(value).includes(searchTerm));
   }
 
   async function renderDashboardGreeting() {
@@ -602,7 +537,7 @@ export async function initDashboard() {
     const currentUsername = normalizeText(getLoggedInUsername());
 
     if (!currentUsername) {
-      greetingEl.textContent = getGreetingByTime();
+      greetingEl.textContent = "Dashboard";
       return;
     }
 
@@ -615,19 +550,20 @@ export async function initDashboard() {
       const firstName = normalizeText(currentUser?.firstName);
       greetingEl.textContent = firstName
         ? `${getGreetingByTime()}, ${firstName}`
-        : getGreetingByTime();
+        : "Dashboard";
     } catch (error) {
       console.error("Failed to render dashboard greeting:", error);
-      greetingEl.textContent = getGreetingByTime();
+      greetingEl.textContent = "Dashboard";
     }
   }
 
   async function hydrateDashboardData() {
     try {
-      const [equipmentList, workOrders, purchaseOrders, settings] = await Promise.all([
+      const [equipmentList, workOrders, purchaseOrders, inventory, settings] = await Promise.all([
         loadEquipment(),
         loadWorkOrders(),
         loadPurchaseOrders(),
+        loadInventory(),
         loadSettings()
       ]);
 
@@ -635,6 +571,7 @@ export async function initDashboard() {
         equipmentList: safeArray(equipmentList),
         workOrders: safeArray(workOrders),
         purchaseOrders: safeArray(purchaseOrders),
+        inventory: safeArray(inventory),
         settings: {
           companyName: "",
           defaultLocation: "",
@@ -655,6 +592,7 @@ export async function initDashboard() {
         equipmentList: [],
         workOrders: [],
         purchaseOrders: [],
+        inventory: [],
         settings: {
           companyName: "",
           defaultLocation: "",
@@ -667,59 +605,122 @@ export async function initDashboard() {
     }
   }
 
-  function renderVehicleStatus(equipmentList) {
-    const activeCount = safeArray(equipmentList).filter(eq => (eq.status || "") === "Active").length;
-    const inactiveCount = safeArray(equipmentList).filter(eq => (eq.status || "") === "Inactive").length;
-    const inRepairCount = safeArray(equipmentList).filter(eq => (eq.status || "") === "In Repair").length;
-    const outOfServiceCount = safeArray(equipmentList).filter(
-      eq => (eq.status || "") === "Out of Service"
+  function getOpenWorkOrders(workOrders) {
+    return safeArray(workOrders).filter(wo => {
+      const status = String(wo.status || "").trim();
+      return !["Completed", "Closed", "Canceled", "Cancelled"].includes(status);
+    });
+  }
+
+  function getLowStockInventoryItems(inventory) {
+    return safeArray(inventory).filter(item => {
+      const quantity = toNumber(item.quantity);
+      const reorderPoint = toNumber(item.reorderPoint || item.minimumQuantity);
+      return reorderPoint > 0 && quantity <= reorderPoint;
+    });
+  }
+
+  function getBucketOrder() {
+    return ["due", "dueIn30Days", "overdue"];
+  }
+
+  function getCategoryOrder() {
+    return ["Trucks", "Trailers", "O/O's"];
+  }
+
+  function getDueServicesData(equipmentList) {
+    return buildDashboardDueServicesData(equipmentList, dashboardCache.settings);
+  }
+
+  function getDueServicesCounts(data) {
+    return {
+      due: getCategoryOrder().reduce(
+        (sum, category) => sum + safeArray(data?.due?.[category]).length,
+        0
+      ),
+      dueIn30Days: getCategoryOrder().reduce(
+        (sum, category) => sum + safeArray(data?.dueIn30Days?.[category]).length,
+        0
+      ),
+      overdue: getCategoryOrder().reduce(
+        (sum, category) => sum + safeArray(data?.overdue?.[category]).length,
+        0
+      )
+    };
+  }
+
+  function renderKpis(equipmentList, workOrders, inventory) {
+    const activeUnits = safeArray(equipmentList).filter(
+      eq => String(eq.status || "").trim() === "Active"
     ).length;
 
-    const dashActiveCount = dom.dashActiveCount || document.getElementById("dashActiveCount");
-    const dashInactiveCount = dom.dashInactiveCount || document.getElementById("dashInactiveCount");
-    const dashInRepairCount =
-      dom.dashInRepairCount ||
-      dom.dashInShopCount ||
-      document.getElementById("dashInRepairCount") ||
-      document.getElementById("dashInShopCount");
-    const dashOutOfServiceCount =
-      dom.dashOutOfServiceCount || document.getElementById("dashOutOfServiceCount");
+    const openWorkOrders = getOpenWorkOrders(workOrders).length;
+    const dueData = getDueServicesData(equipmentList);
+    const dueCounts = getDueServicesCounts(dueData);
+    const lowStockParts = getLowStockInventoryItems(inventory).length;
 
-    if (dashActiveCount) dashActiveCount.textContent = String(activeCount);
-    if (dashInactiveCount) dashInactiveCount.textContent = String(inactiveCount);
-    if (dashInRepairCount) dashInRepairCount.textContent = String(inRepairCount);
-    if (dashOutOfServiceCount) dashOutOfServiceCount.textContent = String(outOfServiceCount);
+    setText("dashKpiActiveUnits", activeUnits);
+    setText("dashKpiOpenWorkOrders", openWorkOrders);
+    setText("dashKpiDueServices", dueCounts.due);
+    setText("dashKpiOverdueServices", dueCounts.overdue);
+    setText("dashKpiLowStockParts", lowStockParts);
+  }
+
+  function renderVehicleStatus(equipmentList) {
+    const activeCount = safeArray(equipmentList).filter(
+      eq => String(eq.status || "").trim() === "Active"
+    ).length;
+
+    const inactiveCount = safeArray(equipmentList).filter(
+      eq => String(eq.status || "").trim() === "Inactive"
+    ).length;
+
+    const inRepairCount = safeArray(equipmentList).filter(
+      eq => String(eq.status || "").trim() === "In Repair"
+    ).length;
+
+    setText(dom.dashActiveCount || document.getElementById("dashActiveCount"), activeCount);
+    setText(dom.dashInactiveCount || document.getElementById("dashInactiveCount"), inactiveCount);
+    setText(
+      dom.dashInRepairCount ||
+        dom.dashInShopCount ||
+        document.getElementById("dashInRepairCount") ||
+        document.getElementById("dashInShopCount"),
+      inRepairCount
+    );
   }
 
   function renderWorkOrderSummary(workOrders) {
-    const woOpen = safeArray(workOrders).filter(wo => (wo.status || "") === "Open").length;
+    const woOpen = safeArray(workOrders).filter(
+      wo => String(wo.status || "").trim() === "Open"
+    ).length;
+
     const woPending = safeArray(workOrders).filter(wo =>
-      ["Pending", "In Progress", "Manager Review"].includes(wo.status || "")
+      ["Pending", "In Progress", "Manager Review"].includes(String(wo.status || "").trim())
     ).length;
+
     const woCompleted = safeArray(workOrders).filter(wo =>
-      ["Completed", "Closed"].includes(wo.status || "")
+      ["Completed", "Closed"].includes(String(wo.status || "").trim())
     ).length;
 
-    const dashWOOpen = dom.dashWOOpen || document.getElementById("dashWOOpen");
-    const dashWOPending = dom.dashWOPending || document.getElementById("dashWOPending");
-    const dashWOCompleted = dom.dashWOCompleted || document.getElementById("dashWOCompleted");
-
-    if (dashWOOpen) dashWOOpen.textContent = String(woOpen);
-    if (dashWOPending) dashWOPending.textContent = String(woPending);
-    if (dashWOCompleted) dashWOCompleted.textContent = String(woCompleted);
+    setText(dom.dashWOOpen || document.getElementById("dashWOOpen"), woOpen);
+    setText(dom.dashWOPending || document.getElementById("dashWOPending"), woPending);
+    setText(dom.dashWOCompleted || document.getElementById("dashWOCompleted"), woCompleted);
   }
 
   function renderOpenIssues(workOrders) {
-    const openIssues = safeArray(workOrders).filter(wo =>
-      ["Open", "Pending", "In Progress", "Manager Review"].includes(wo.status || "")
+    const openIssues = getOpenWorkOrders(workOrders).length;
+
+    const pendingIssues = safeArray(workOrders).filter(wo =>
+      ["Pending", "In Progress", "Manager Review"].includes(String(wo.status || "").trim())
     ).length;
 
     const overdueIssues = safeArray(workOrders).filter(wo => {
       const opened = parseDate(wo.opened || wo.date || wo.woDate);
-      const status = String(wo.status || "");
+      const status = String(wo.status || "").trim();
 
       if (!opened) return false;
-      if (["Completed", "Closed"].includes(status)) return false;
+      if (["Completed", "Closed", "Canceled", "Cancelled"].includes(status)) return false;
 
       const ageInDays = Math.floor(
         (parseDate(getTodayDateString()) - parseDate(dateToYMD(opened))) /
@@ -729,22 +730,27 @@ export async function initDashboard() {
       return ageInDays > 7;
     }).length;
 
-    const dashOpenIssues = dom.dashOpenIssues || document.getElementById("dashOpenIssues");
-    const dashOverdueIssues =
-      dom.dashOverdueIssues || document.getElementById("dashOverdueIssues");
+    setText(dom.dashOpenIssues || document.getElementById("dashOpenIssues"), openIssues);
+    setText(dom.dashOverdueIssues || document.getElementById("dashOverdueIssues"), overdueIssues);
+    setText(document.getElementById("dashPendingIssues"), pendingIssues);
+  }
 
-    if (dashOpenIssues) dashOpenIssues.textContent = String(openIssues);
-    if (dashOverdueIssues) dashOverdueIssues.textContent = String(overdueIssues);
+  function getWorkOrderCost(wo) {
+    return toNumber(wo.total || wo.totalCost || wo.totalLabor + wo.totalParts);
+  }
+
+  function getPurchaseOrderCost(po) {
+    return toNumber(po.total || po.totalCost || po.grandTotal || po.amount);
   }
 
   function renderCostSummary(workOrders, purchaseOrders) {
     const workOrderCosts = safeArray(workOrders).reduce(
-      (sum, wo) => sum + toNumber(wo.total || wo.totalCost),
+      (sum, wo) => sum + getWorkOrderCost(wo),
       0
     );
 
     const purchaseOrderCosts = safeArray(purchaseOrders).reduce(
-      (sum, po) => sum + toNumber(po.total || po.totalCost),
+      (sum, po) => sum + getPurchaseOrderCost(po),
       0
     );
 
@@ -757,44 +763,104 @@ export async function initDashboard() {
       const parsed = parseDate(rawDate);
       if (!parsed) return sum;
       if (parsed.getMonth() !== currentMonth || parsed.getFullYear() !== currentYear) return sum;
-      return sum + toNumber(wo.total || wo.totalCost);
+      return sum + getWorkOrderCost(wo);
     }, 0);
 
-    const dashMonthServiceCost =
+    setText(
       dom.dashMonthServiceCost ||
-      dom.dashServiceCostMonth ||
-      document.getElementById("dashMonthServiceCost") ||
-      document.getElementById("dashServiceCostMonth");
+        dom.dashServiceCostMonth ||
+        document.getElementById("dashMonthServiceCost") ||
+        document.getElementById("dashServiceCostMonth"),
+      formatMoney(workOrderCostsThisMonth)
+    );
 
-    const dashYearServiceCost =
+    setText(
       dom.dashYearServiceCost ||
-      dom.dashServiceCostTotal ||
-      document.getElementById("dashYearServiceCost") ||
-      document.getElementById("dashServiceCostTotal");
+        dom.dashServiceCostTotal ||
+        document.getElementById("dashYearServiceCost") ||
+        document.getElementById("dashServiceCostTotal"),
+      formatMoney(workOrderCosts)
+    );
 
-    const dashTotalWOCost = dom.dashTotalWOCost || document.getElementById("dashTotalWOCost");
-    const dashTotalPOCost = dom.dashTotalPOCost || document.getElementById("dashTotalPOCost");
-    const dashCombinedCost = dom.dashCombinedCost || document.getElementById("dashCombinedCost");
+    setText(dom.dashTotalWOCost || document.getElementById("dashTotalWOCost"), formatMoney(workOrderCosts));
+    setText(dom.dashTotalPOCost || document.getElementById("dashTotalPOCost"), formatMoney(purchaseOrderCosts));
+    setText(dom.dashCombinedCost || document.getElementById("dashCombinedCost"), formatMoney(workOrderCosts + purchaseOrderCosts));
 
-    if (dashMonthServiceCost) {
-      dashMonthServiceCost.textContent = formatMoney(workOrderCostsThisMonth);
+    renderServiceCostChart(workOrders);
+  }
+
+  function getMonthKey(date) {
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, "0");
+    return `${year}-${month}`;
+  }
+
+  function getMonthLabel(date) {
+    return date.toLocaleDateString(undefined, {
+      month: "short",
+      year: "2-digit"
+    });
+  }
+
+  function renderServiceCostChart(workOrders) {
+    const chart = document.getElementById("dashServiceCostChart");
+    if (!chart) return;
+
+    const months = [];
+    const now = new Date();
+
+    for (let i = 5; i >= 0; i -= 1) {
+      const date = new Date(now.getFullYear(), now.getMonth() - i, 1);
+      months.push({
+        key: getMonthKey(date),
+        label: getMonthLabel(date),
+        total: 0
+      });
     }
 
-    if (dashYearServiceCost) {
-      dashYearServiceCost.textContent = formatMoney(workOrderCosts);
-    }
+    const monthMap = new Map(months.map(month => [month.key, month]));
 
-    if (dashTotalWOCost) {
-      dashTotalWOCost.textContent = formatMoney(workOrderCosts);
-    }
+    safeArray(workOrders).forEach(wo => {
+      const rawDate = wo.completed || wo.closed || wo.updatedAt || wo.opened || wo.date || wo.woDate;
+      const parsed = parseDate(rawDate);
+      if (!parsed) return;
 
-    if (dashTotalPOCost) {
-      dashTotalPOCost.textContent = formatMoney(purchaseOrderCosts);
-    }
+      const key = getMonthKey(parsed);
+      const month = monthMap.get(key);
+      if (!month) return;
 
-    if (dashCombinedCost) {
-      dashCombinedCost.textContent = formatMoney(workOrderCosts + purchaseOrderCosts);
-    }
+      month.total += getWorkOrderCost(wo);
+    });
+
+    const maxValue = Math.max(...months.map(month => month.total), 1);
+
+    chart.innerHTML = months
+      .map(month => {
+        const height = Math.max(8, Math.round((month.total / maxValue) * 100));
+
+        return `
+          <div class="dashboardCostBarItem">
+            <div class="dashboardCostBarTrack">
+              <div class="dashboardCostBar" style="height: ${height}%"></div>
+            </div>
+            <div class="dashboardCostBarLabel">${escapeHtml(month.label)}</div>
+          </div>
+        `;
+      })
+      .join("");
+  }
+
+  function formatActivityDate(item) {
+    const rawDate = item.updatedAt || item.completed || item.closed || item.opened || item.date || item.woDate;
+    const parsed = parseDate(rawDate);
+
+    if (!parsed) return "";
+
+    return parsed.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric",
+      year: "numeric"
+    });
   }
 
   function renderRecentActivity(workOrders) {
@@ -808,13 +874,24 @@ export async function initDashboard() {
     container.innerHTML = "";
 
     const sorted = safeArray(workOrders)
+      .filter(item =>
+        itemMatchesSearch(
+          item.workOrderNumber,
+          item.woNumber,
+          item.number,
+          item.unit,
+          item.equipmentNumber,
+          item.status,
+          item.notes
+        )
+      )
       .slice()
       .sort((a, b) => {
         const aDate = parseDate(a.updatedAt || a.completed || a.closed || a.opened || a.date || a.woDate);
         const bDate = parseDate(b.updatedAt || b.completed || b.closed || b.opened || b.date || b.woDate);
         return (bDate?.getTime() || 0) - (aDate?.getTime() || 0);
       })
-      .slice(0, 6);
+      .slice(0, 5);
 
     if (!sorted.length) {
       container.appendChild(createEmptyMessage("No recent work order activity"));
@@ -823,28 +900,46 @@ export async function initDashboard() {
 
     sorted.forEach(item => {
       const row = document.createElement("div");
-      row.className = "activityRow";
+      row.className = "activityRow dashboardActivityRow";
+
+      const title =
+        item.workOrderNumber ||
+        item.woNumber ||
+        item.number ||
+        "Work Order";
+
+      const unit =
+        item.unit ||
+        item.equipmentNumber ||
+        item.equipmentId ||
+        "";
 
       row.innerHTML = `
-        <div>
-          <div class="dueServicesRowTitle">${escapeHtml(
-            item.workOrderNumber || item.woNumber || item.number || "Work Order"
-          )}</div>
-          <div class="activityMeta">${escapeHtml(item.unit || item.equipmentNumber || "")}</div>
+        <div class="dashboardActivityIcon">✓</div>
+        <div class="dashboardActivityContent">
+          <div class="dueServicesRowTitle">${escapeHtml(title)}</div>
+          <div class="activityMeta">
+            ${unit ? `Unit ${escapeHtml(unit)} • ` : ""}
+            ${escapeHtml(item.status || "Updated")}
+          </div>
         </div>
-        <div class="activityMeta">${escapeHtml(item.status || "")}</div>
+        <div class="activityMeta">${escapeHtml(formatActivityDate(item))}</div>
       `;
 
       container.appendChild(row);
     });
   }
 
-  function getBucketOrder() {
-    return ["due", "dueIn30Days", "overdue"];
+  function getServiceStatusLabel(bucket) {
+    if (bucket === "overdue") return "Overdue";
+    if (bucket === "dueIn30Days") return "Due in 30 Days";
+    return "Due";
   }
 
-  function getCategoryOrder() {
-    return ["Trucks", "Trailers", "O/O's"];
+  function getServiceStatusClass(bucket) {
+    if (bucket === "overdue") return "red";
+    if (bucket === "dueIn30Days") return "gold";
+    return "blue";
   }
 
   function ensureDueServicesStateIsValid(data) {
@@ -863,20 +958,7 @@ export async function initDashboard() {
     const { tabs } = getDueServicesTargets();
     if (!tabs) return;
 
-    const counts = {
-      due: getCategoryOrder().reduce(
-        (sum, category) => sum + safeArray(data?.due?.[category]).length,
-        0
-      ),
-      dueIn30Days: getCategoryOrder().reduce(
-        (sum, category) => sum + safeArray(data?.dueIn30Days?.[category]).length,
-        0
-      ),
-      overdue: getCategoryOrder().reduce(
-        (sum, category) => sum + safeArray(data?.overdue?.[category]).length,
-        0
-      )
-    };
+    const counts = getDueServicesCounts(data);
 
     const labelMap = {
       due: "Due",
@@ -887,7 +969,7 @@ export async function initDashboard() {
     tabs.innerHTML = getBucketOrder()
       .map(bucket => {
         const isActive = bucket === dueServicesActiveTab;
-        const badgeClass = bucket === "overdue" ? "red" : bucket === "due" ? "orange" : "blue";
+        const badgeClass = getServiceStatusClass(bucket);
 
         return `
           <button
@@ -928,41 +1010,68 @@ export async function initDashboard() {
       .join("");
   }
 
+  function getOwnerLabel(item) {
+    return (
+      normalizeText(item.owner) ||
+      normalizeText(item.business) ||
+      normalizeText(item.assignee) ||
+      "Company"
+    );
+  }
+
+  function getLastDoneLabel(item) {
+    return (
+      normalizeText(item.lastCompletedDisplay) ||
+      normalizeText(item.lastCompleted) ||
+      normalizeText(item.completedDate) ||
+      "No history"
+    );
+  }
+
   function renderDueServicesList(data) {
     const { list } = getDueServicesTargets();
     if (!list) return;
 
     const activeBucket = safeObject(data?.[dueServicesActiveTab]);
-    const items = safeArray(activeBucket[dueServicesActiveCategory]);
+    const items = safeArray(activeBucket[dueServicesActiveCategory])
+      .filter(item =>
+        itemMatchesSearch(
+          item.unit,
+          item.serviceLabel,
+          item.location,
+          item.type,
+          item.dueReason,
+          item.lastCompletedDisplay
+        )
+      );
 
     list.innerHTML = "";
 
     if (!items.length) {
-      list.appendChild(createEmptyMessage("No equipment currently matches this filter."));
+      list.appendChild(createEmptyTableRow("No equipment currently matches this filter."));
       return;
     }
 
     items.forEach(item => {
-      const row = document.createElement("div");
-      row.className = "dueServiceRow";
+      const row = document.createElement("tr");
+      const statusLabel = getServiceStatusLabel(dueServicesActiveTab);
+      const statusClass = getServiceStatusClass(dueServicesActiveTab);
 
       row.innerHTML = `
-        <div class="dueServiceMain">
+        <td>
           <strong>${escapeHtml(item.unit || "Unit")}</strong>
-          <div class="dueServiceMeta">
-            ${escapeHtml(item.serviceLabel || "Service")}
-            ${item.location ? ` • ${escapeHtml(item.location)}` : ""}
-          </div>
-          <div class="dueServiceMeta">
-            ${escapeHtml(item.dueReason || "No completion history")}
-            ${
-              item.lastCompletedDisplay && item.lastCompletedDisplay !== "—"
-                ? ` • Last ${escapeHtml(item.lastCompletedDisplay)}`
-                : ""
-            }
-          </div>
-        </div>
-        <div class="dueServiceType">${escapeHtml(item.type || "")}</div>
+          ${
+            item.location
+              ? `<div class="dashboardTableSubtext">${escapeHtml(item.location)}</div>`
+              : ""
+          }
+        </td>
+        <td>${escapeHtml(item.serviceLabel || "Service")}</td>
+        <td>
+          <span class="badge ${statusClass}">${escapeHtml(statusLabel)}</span>
+        </td>
+        <td>${escapeHtml(getLastDoneLabel(item))}</td>
+        <td>${escapeHtml(getOwnerLabel(item))}</td>
       `;
 
       list.appendChild(row);
@@ -978,18 +1087,75 @@ export async function initDashboard() {
       if (categories) categories.innerHTML = "";
       if (list) {
         list.innerHTML = "";
-        list.appendChild(
-          createEmptyMessage("You do not have access to equipment service reminders")
-        );
+        list.appendChild(createEmptyTableRow("You do not have access to equipment service reminders."));
       }
       return;
     }
 
-    const data = buildDashboardDueServicesData(equipmentList, dashboardCache.settings);
+    const data = getDueServicesData(equipmentList);
     ensureDueServicesStateIsValid(data);
     renderDueServicesTabs(data);
     renderDueServicesCategories(data);
     renderDueServicesList(data);
+  }
+
+  function renderInventoryAlerts(inventory) {
+    const container = document.getElementById("dashInventoryAlerts");
+    if (!container) return;
+
+    container.innerHTML = "";
+
+    if (!canViewInventory()) {
+      container.appendChild(createEmptyMessage("You do not have access to inventory alerts."));
+      return;
+    }
+
+    const lowStock = getLowStockInventoryItems(inventory)
+      .filter(item =>
+        itemMatchesSearch(
+          item.name,
+          item.itemName,
+          item.partNumber,
+          item.category,
+          item.location,
+          item.vendor
+        )
+      )
+      .sort((a, b) => {
+        const aQty = toNumber(a.quantity);
+        const bQty = toNumber(b.quantity);
+        return aQty - bQty;
+      })
+      .slice(0, 5);
+
+    if (!lowStock.length) {
+      container.appendChild(createEmptyMessage("No low stock parts."));
+      return;
+    }
+
+    lowStock.forEach(item => {
+      const quantity = toNumber(item.quantity);
+      const reorderPoint = toNumber(item.reorderPoint || item.minimumQuantity);
+      const name = item.name || item.itemName || "Inventory Item";
+      const partNumber = item.partNumber ? `#${item.partNumber}` : "";
+
+      const row = document.createElement("div");
+      row.className = "dashboardInventoryRow";
+
+      row.innerHTML = `
+        <div>
+          <strong>${escapeHtml(name)}</strong>
+          <div class="activityMeta">
+            ${escapeHtml(partNumber)}
+            ${item.location ? ` • ${escapeHtml(item.location)}` : ""}
+          </div>
+          <div class="activityMeta">On hand: ${quantity} • Reorder point: ${reorderPoint}</div>
+        </div>
+        <span class="badge red">${quantity}</span>
+      `;
+
+      container.appendChild(row);
+    });
   }
 
   function getWeatherCodeLabel(code) {
@@ -1018,6 +1184,40 @@ export async function initDashboard() {
     return map[Number(code)] || "Forecast unavailable";
   }
 
+  function getWeatherIcon(code) {
+    const numericCode = Number(code);
+
+    if ([0, 1].includes(numericCode)) return "☀️";
+    if ([2].includes(numericCode)) return "🌤️";
+    if ([3].includes(numericCode)) return "☁️";
+    if ([45, 48].includes(numericCode)) return "🌫️";
+    if ([51, 53, 55].includes(numericCode)) return "🌦️";
+    if ([61, 63, 65, 80, 81, 82].includes(numericCode)) return "🌧️";
+    if ([71, 73, 75].includes(numericCode)) return "❄️";
+    if ([95].includes(numericCode)) return "⛈️";
+
+    return "🌡️";
+  }
+
+  function formatForecastDay(dateString) {
+    const parsed = parseDate(dateString);
+    if (!parsed) return "Day";
+
+    return parsed.toLocaleDateString(undefined, {
+      weekday: "short"
+    });
+  }
+
+  function formatForecastDate(dateString) {
+    const parsed = parseDate(dateString);
+    if (!parsed) return "";
+
+    return parsed.toLocaleDateString(undefined, {
+      month: "short",
+      day: "numeric"
+    });
+  }
+
   async function fetchWeatherSummaryByZip(zip = "62201") {
     const cleanZip = String(zip || "62201").trim() || "62201";
 
@@ -1037,7 +1237,7 @@ export async function initDashboard() {
     }
 
     const forecastUrl =
-      `https://api.open-meteo.com/v1/forecast?latitude=${place.latitude}&longitude=${place.longitude}&current=temperature_2m,weather_code&daily=temperature_2m_max,temperature_2m_min,weather_code&temperature_unit=fahrenheit&timezone=auto&forecast_days=3`;
+      `https://api.open-meteo.com/v1/forecast?latitude=${place.latitude}&longitude=${place.longitude}&current=temperature_2m,weather_code,wind_speed_10m&daily=temperature_2m_max,temperature_2m_min,weather_code,precipitation_probability_max&temperature_unit=fahrenheit&wind_speed_unit=mph&timezone=auto&forecast_days=7`;
 
     const forecastRes = await fetch(forecastUrl);
     if (!forecastRes.ok) {
@@ -1055,46 +1255,117 @@ export async function initDashboard() {
   }
 
   async function renderWeatherSummary() {
-    const { summary } = getWeatherTargets();
-    if (!summary) return;
+  const { summary } = getWeatherTargets();
+  if (!summary) return;
 
-    summary.innerHTML = `<div class="muted">Loading weather...</div>`;
+  const currentZip = normalizeZipInput(dashboardCache?.settings?.weatherZip || "62201") || "62201";
 
-    try {
-      const zip = dashboardCache?.settings?.weatherZip || "62201";
-      const weather = await fetchWeatherSummaryByZip(zip);
+  summary.innerHTML = `
+    <div class="weatherZipLookup">
+      <label for="dashboardWeatherZipInput">Weather ZIP</label>
 
-      const currentTemp = weather.current?.temperature_2m;
-      const currentCode = weather.current?.weather_code;
+      <div class="weatherZipForm">
+        <input
+          id="dashboardWeatherZipInput"
+          type="text"
+          inputmode="numeric"
+          maxlength="5"
+          value="${escapeHtml(currentZip)}"
+          placeholder="62201"
+        />
+        <button id="dashboardWeatherZipBtn" type="button">Update</button>
+      </div>
 
-      const maxToday = Array.isArray(weather.daily?.temperature_2m_max)
-        ? weather.daily.temperature_2m_max[0]
-        : null;
+      <div id="dashboardWeatherZipMessage" class="weatherZipMessage"></div>
+    </div>
 
-      const minToday = Array.isArray(weather.daily?.temperature_2m_min)
-        ? weather.daily.temperature_2m_min[0]
-        : null;
+    <div id="dashboardWeatherForecastBody">
+      <div class="muted">Loading weather...</div>
+    </div>
+  `;
 
-      const nextDayCode = Array.isArray(weather.daily?.weather_code)
-        ? weather.daily.weather_code[1]
-        : null;
+  const forecastBody = document.getElementById("dashboardWeatherForecastBody");
 
-      summary.innerHTML = `
-        <div class="weatherNow">
-          <div class="weatherTitle">${escapeHtml(weather.placeName)} ${escapeHtml(weather.zip)}</div>
-          <div class="weatherTemp">${currentTemp ?? "--"}°F</div>
-          <div class="weatherCond">${escapeHtml(getWeatherCodeLabel(currentCode))}</div>
-        </div>
-        <div class="weatherToday">
-          <div>Today: High ${maxToday ?? "--"}° / Low ${minToday ?? "--"}°</div>
-          <div>Tomorrow: ${escapeHtml(getWeatherCodeLabel(nextDayCode))}</div>
+  try {
+    const weather = await fetchWeatherSummaryByZip(currentZip);
+
+    const currentTemp = weather.current?.temperature_2m;
+    const currentCode = weather.current?.weather_code;
+    const currentWind = weather.current?.wind_speed_10m;
+
+    const dailyDates = Array.isArray(weather.daily?.time) ? weather.daily.time : [];
+    const dailyCodes = Array.isArray(weather.daily?.weather_code) ? weather.daily.weather_code : [];
+    const dailyHighs = Array.isArray(weather.daily?.temperature_2m_max)
+      ? weather.daily.temperature_2m_max
+      : [];
+    const dailyLows = Array.isArray(weather.daily?.temperature_2m_min)
+      ? weather.daily.temperature_2m_min
+      : [];
+    const dailyPrecip = Array.isArray(weather.daily?.precipitation_probability_max)
+      ? weather.daily.precipitation_probability_max
+      : [];
+
+    const forecastCards = dailyDates.slice(0, 7).map((dateString, index) => {
+      const code = dailyCodes[index];
+      const high = dailyHighs[index] ?? "--";
+      const low = dailyLows[index] ?? "--";
+      const precip = dailyPrecip[index] ?? 0;
+
+      return `
+        <div class="weatherForecastDay">
+          <div class="weatherForecastTop">
+            <strong>${escapeHtml(formatForecastDay(dateString))}</strong>
+            <span>${escapeHtml(formatForecastDate(dateString))}</span>
+          </div>
+
+          <div class="weatherForecastIcon">${getWeatherIcon(code)}</div>
+
+          <div class="weatherForecastTemps">
+            <strong>${high}°</strong>
+            <span>${low}°</span>
+          </div>
+
+          <div class="weatherForecastCondition">
+            ${escapeHtml(getWeatherCodeLabel(code))}
+          </div>
+
+          <div class="weatherForecastRain">
+            ${precip}% precip
+          </div>
         </div>
       `;
-    } catch (error) {
-      console.error("Weather widget failed:", error);
-      summary.innerHTML = `<div class="muted">Unable to load weather.</div>`;
+    }).join("");
+
+    if (forecastBody) {
+      forecastBody.innerHTML = `
+        <div class="weatherCurrentPanel">
+          <div class="weatherCurrentIcon">${getWeatherIcon(currentCode)}</div>
+
+          <div class="weatherCurrentDetails">
+            <div class="weatherTitle">${escapeHtml(weather.placeName)} ${escapeHtml(weather.zip)}</div>
+            <div class="weatherTemp">${currentTemp ?? "--"}°F</div>
+            <div class="weatherCond">${escapeHtml(getWeatherCodeLabel(currentCode))}</div>
+            <div class="weatherWind">Wind ${currentWind ?? "--"} mph</div>
+          </div>
+        </div>
+
+        <div class="weatherForecastHeader">
+          <h4>7-Day Forecast</h4>
+        </div>
+
+        <div class="weatherForecastGrid">
+          ${forecastCards || `<div class="muted">Forecast unavailable.</div>`}
+        </div>
+      `;
+    }
+  } catch (error) {
+    console.error("Weather widget failed:", error);
+
+    if (forecastBody) {
+      forecastBody.innerHTML = `<div class="muted">Unable to load weather for ZIP ${escapeHtml(currentZip)}.</div>`;
     }
   }
+}
 
   function bindDueServicesEvents() {
     if (dueServicesEventsBound) return;
@@ -1122,6 +1393,102 @@ export async function initDashboard() {
     });
   }
 
+  function bindWeatherZipEvents() {
+  if (weatherZipEventsBound) return;
+  weatherZipEventsBound = true;
+
+  const weatherSection =
+    dom.dashWeatherSection ||
+    document.getElementById("dashWeatherSection");
+
+  if (!weatherSection) return;
+
+  async function updateWeatherZip() {
+    const input = document.getElementById("dashboardWeatherZipInput");
+    const message = document.getElementById("dashboardWeatherZipMessage");
+    const button = document.getElementById("dashboardWeatherZipBtn");
+
+    const nextZip = normalizeZipInput(input?.value || "");
+
+    if (!nextZip || nextZip.length !== 5) {
+      if (message) {
+        message.textContent = "Enter a valid 5-digit ZIP code.";
+        message.className = "weatherZipMessage error";
+      }
+      return;
+    }
+
+    try {
+      if (button) {
+        button.disabled = true;
+        button.textContent = "Updating...";
+      }
+
+      const nextSettings = {
+        ...safeObject(dashboardCache.settings),
+        weatherZip: nextZip
+      };
+
+      await saveSettings(nextSettings);
+
+      dashboardCache.settings = {
+        ...safeObject(dashboardCache.settings),
+        weatherZip: nextZip
+      };
+
+      if (message) {
+        message.textContent = `Weather ZIP updated to ${nextZip}.`;
+        message.className = "weatherZipMessage success";
+      }
+
+      await renderWeatherSummary();
+    } catch (error) {
+      console.error("Failed to update weather ZIP:", error);
+
+      if (message) {
+        message.textContent = "Unable to update weather ZIP.";
+        message.className = "weatherZipMessage error";
+      }
+    } finally {
+      if (button) {
+        button.disabled = false;
+        button.textContent = "Update";
+      }
+    }
+  }
+
+  weatherSection.addEventListener("click", event => {
+    const button = event.target.closest("#dashboardWeatherZipBtn");
+    if (!button) return;
+
+    event.preventDefault();
+    event.stopPropagation();
+
+    updateWeatherZip();
+  });
+
+  weatherSection.addEventListener("keydown", event => {
+    const input = event.target.closest("#dashboardWeatherZipInput");
+    if (!input) return;
+
+    if (event.key === "Enter") {
+      event.preventDefault();
+      event.stopPropagation();
+      updateWeatherZip();
+    }
+  });
+
+  weatherSection.addEventListener("input", event => {
+    const input = event.target.closest("#dashboardWeatherZipInput");
+    if (!input) return;
+
+    const cleanValue = normalizeZipInput(input.value);
+    if (input.value !== cleanValue) {
+      input.value = cleanValue;
+    }
+  });
+}
+
   function bindSyncEvents() {
     if (syncEventsBound) return;
     syncEventsBound = true;
@@ -1135,6 +1502,10 @@ export async function initDashboard() {
     });
 
     window.addEventListener("fleet:purchase-orders-changed", () => {
+      updateDashboard();
+    });
+
+    window.addEventListener("fleet:inventory-changed", () => {
       updateDashboard();
     });
 
@@ -1158,13 +1529,21 @@ export async function initDashboard() {
       if (recentContainer) {
         recentContainer.innerHTML = "";
         recentContainer.appendChild(
-          createEmptyMessage("You do not have access to the dashboard")
+          createEmptyMessage("You do not have access to the dashboard.")
+        );
+      }
+
+      const inventoryAlerts = document.getElementById("dashInventoryAlerts");
+      if (inventoryAlerts) {
+        inventoryAlerts.innerHTML = "";
+        inventoryAlerts.appendChild(
+          createEmptyMessage("You do not have access to the dashboard.")
         );
       }
 
       if (summary) {
         summary.innerHTML = "";
-        summary.appendChild(createEmptyMessage("You do not have access to the dashboard"));
+        summary.appendChild(createEmptyMessage("You do not have access to the dashboard."));
       }
 
       if (tabs) tabs.innerHTML = "";
@@ -1172,7 +1551,7 @@ export async function initDashboard() {
 
       if (list) {
         list.innerHTML = "";
-        list.appendChild(createEmptyMessage("You do not have access to the dashboard"));
+        list.appendChild(createEmptyTableRow("You do not have access to the dashboard."));
       }
 
       return;
@@ -1193,21 +1572,30 @@ export async function initDashboard() {
       ? safeArray(dashboardCache.purchaseOrders)
       : [];
 
+    const inventory = canViewInventory()
+      ? safeArray(dashboardCache.inventory)
+      : [];
+
+    renderKpis(equipmentList, workOrders, inventory);
     renderVehicleStatus(equipmentList);
     renderWorkOrderSummary(workOrders);
     renderOpenIssues(workOrders);
     renderCostSummary(workOrders, purchaseOrders);
     renderRecentActivity(workOrders);
+    renderInventoryAlerts(inventory);
     renderDueServicesSection(equipmentList);
     await renderWeatherSummary();
     applyDashboardLayout();
   }
 
+  localStorage.removeItem(DASHBOARD_LAYOUT_KEY);
+
   applyDashboardLayout();
-  bindLayoutEvents();
   bindDueServicesEvents();
   bindSyncEvents();
+  bindWeatherZipEvents();
   bindDashboardEditorEvents();
+  bindDashboardSearchEvents();
   await updateDashboard();
 
   return {

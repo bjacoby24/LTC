@@ -31,7 +31,6 @@ import {
 import {
   getEquipmentServiceSnapshot,
   ensureEquipmentServiceHistory,
-  normalizeEquipmentType,
   formatDateDisplay,
   parseDate,
   dateToYMD,
@@ -47,6 +46,7 @@ export async function initEquipment() {
   let equipmentList = [];
   let deletedEquipment = [];
   let workOrdersCache = [];
+
   let settingsCache = {
     companyName: "",
     defaultLocation: "",
@@ -58,6 +58,8 @@ export async function initEquipment() {
   let editingId = null;
   let selectedEquipmentId = null;
   let selectedEquipmentIds = new Set();
+  let profileEditMode = false;
+let profileEditOriginalData = null;
   let equipmentSelectionMode = false;
   let equipmentFilterUiMode = "header";
 
@@ -88,10 +90,15 @@ export async function initEquipment() {
 
   let equipmentColumns = loadEquipmentColumns(DEFAULT_EQUIPMENT_COLUMNS).map(col => {
     const normalized = { ...col, custom: !!col.custom };
-    if (normalized.key === "unit") return { ...normalized, filterType: "none" };
+
+    if (normalized.key === "unit") {
+      return { ...normalized, filterType: "none" };
+    }
+
     if (["type", "status", "location"].includes(normalized.key)) {
       return { ...normalized, filterType: "select" };
     }
+
     return normalized;
   });
 
@@ -109,8 +116,17 @@ export async function initEquipment() {
     globalSearch: "",
     filters: {},
     headerMenuOpenFor: null,
+    columnWidths: {},
     ...(loadEquipmentGridState() || {})
   };
+
+  if (
+    !equipmentGridState.columnWidths ||
+    typeof equipmentGridState.columnWidths !== "object" ||
+    Array.isArray(equipmentGridState.columnWidths)
+  ) {
+    equipmentGridState.columnWidths = {};
+  }
 
   const validEquipmentColumnKeys = new Set(
     equipmentColumns.map(col => String(col.key || "").trim()).filter(Boolean)
@@ -131,27 +147,16 @@ export async function initEquipment() {
   }
 
   function safeObject(value) {
-    return value && typeof value === "object" && !Array.isArray(value)
-      ? value
-      : {};
+    return value && typeof value === "object" && !Array.isArray(value) ? value : {};
   }
 
-  function addYears(date, amount) {
-    const next = new Date(date.getTime());
-    next.setFullYear(next.getFullYear() + amount);
-    return next;
-  }
+  function safeCssEscape(value) {
+    const text = String(value || "");
+    if (window.CSS && typeof window.CSS.escape === "function") {
+      return window.CSS.escape(text);
+    }
 
-  function addMonths(date, amount) {
-    const next = new Date(date.getTime());
-    next.setMonth(next.getMonth() + amount);
-    return next;
-  }
-
-  function addWeeks(date, amount) {
-    const next = new Date(date.getTime());
-    next.setDate(next.getDate() + amount * 7);
-    return next;
+    return text.replace(/["\\]/g, "\\$&");
   }
 
   function addDays(date, amount) {
@@ -188,6 +193,7 @@ export async function initEquipment() {
 
   function getCurrentPermissions() {
     const loggedInUser = getLoggedInUser();
+
     const permissions =
       loggedInUser &&
       typeof loggedInUser === "object" &&
@@ -205,20 +211,12 @@ export async function initEquipment() {
     };
   }
 
-  function canViewEquipment() {
-    return !!getCurrentPermissions().equipmentView;
-  }
-
   function canEditEquipment() {
     return !!getCurrentPermissions().equipmentEdit;
   }
 
   function canDeleteEquipment() {
     return !!getCurrentPermissions().equipmentDelete;
-  }
-
-  function canAccessDeletedEquipment() {
-    return !!getCurrentPermissions().deletedEquipmentAccess;
   }
 
   async function requirePermission(checkFn, title, message) {
@@ -230,41 +228,14 @@ export async function initEquipment() {
   function applyEquipmentPermissionUi() {
     const permissions = getCurrentPermissions();
 
-    if (dom.openFormBtn) {
-      dom.openFormBtn.style.display = permissions.equipmentEdit ? "" : "none";
-    }
-
-    if (dom.editProfileBtn) {
-      dom.editProfileBtn.style.display =
-        permissions.equipmentEdit && selectedEquipmentId != null ? "" : "none";
-    }
-
-    if (dom.deleteSelectedEquipmentBtn) {
-      dom.deleteSelectedEquipmentBtn.style.display = permissions.equipmentDelete ? "" : "none";
-    }
-
-    if (dom.openDeletedEquipmentBtn) {
-      dom.openDeletedEquipmentBtn.style.display = permissions.deletedEquipmentAccess ? "" : "none";
-    }
-
-    if (dom.deleteBtn) {
-      dom.deleteBtn.style.display =
-        permissions.equipmentDelete && editingId != null ? "" : "none";
-    }
-
-    if (dom.saveBtn) {
-      dom.saveBtn.style.display =
-        permissions.equipmentEdit && editingId == null ? "" : "none";
-    }
-
-    if (dom.updateBtn) {
-      dom.updateBtn.style.display =
-        permissions.equipmentEdit && editingId != null ? "" : "none";
-    }
-
-    if (dom.importEquipmentBtn) {
-      dom.importEquipmentBtn.style.display = permissions.equipmentEdit ? "" : "none";
-    }
+    if (dom.openFormBtn) dom.openFormBtn.style.display = permissions.equipmentEdit ? "" : "none";
+    if (dom.editProfileBtn) dom.editProfileBtn.style.display = permissions.equipmentEdit && selectedEquipmentId != null ? "" : "none";
+    if (dom.deleteSelectedEquipmentBtn) dom.deleteSelectedEquipmentBtn.style.display = permissions.equipmentDelete ? "" : "none";
+    if (dom.openDeletedEquipmentBtn) dom.openDeletedEquipmentBtn.style.display = permissions.deletedEquipmentAccess ? "" : "none";
+    if (dom.deleteBtn) dom.deleteBtn.style.display = permissions.equipmentDelete && editingId != null ? "" : "none";
+    if (dom.saveBtn) dom.saveBtn.style.display = permissions.equipmentEdit && editingId == null ? "" : "none";
+    if (dom.updateBtn) dom.updateBtn.style.display = permissions.equipmentEdit && editingId != null ? "" : "none";
+    if (dom.importEquipmentBtn) dom.importEquipmentBtn.style.display = permissions.equipmentEdit ? "" : "none";
   }
 
   async function hydrateSharedData() {
@@ -278,6 +249,7 @@ export async function initEquipment() {
 
       equipmentList = safeArray(equipment);
       deletedEquipment = safeArray(deleted);
+
       settingsCache = {
         companyName: "",
         defaultLocation: "",
@@ -288,9 +260,11 @@ export async function initEquipment() {
         serviceTasks: safeArray(settings?.serviceTasks),
         serviceTemplates: safeArray(settings?.serviceTemplates)
       };
+
       workOrdersCache = safeArray(workOrders);
     } catch (error) {
       console.error("Failed to hydrate equipment shared data:", error);
+
       equipmentList = [];
       deletedEquipment = [];
       workOrdersCache = [];
@@ -307,6 +281,7 @@ export async function initEquipment() {
   async function refreshSettingsCache() {
     try {
       const settings = await loadSettings();
+
       settingsCache = {
         ...settingsCache,
         ...safeObject(settings),
@@ -320,8 +295,7 @@ export async function initEquipment() {
 
   async function refreshWorkOrdersCache() {
     try {
-      const workOrders = await loadWorkOrders();
-      workOrdersCache = safeArray(workOrders);
+      workOrdersCache = safeArray(await loadWorkOrders());
     } catch (error) {
       console.error("Failed to refresh work orders cache:", error);
     }
@@ -369,64 +343,122 @@ export async function initEquipment() {
   }
 
   function getFilteredNormalizedEquipment() {
-    return getFilteredGridData(
-      getNormalizedEquipment(),
-      equipmentColumns,
-      equipmentGridState
-    );
+    return getFilteredGridData(getNormalizedEquipment(), equipmentColumns, equipmentGridState);
   }
 
   function closeEquipmentOptionsDropdown() {
-    if (dom.equipmentOptionsDropdown) {
-      dom.equipmentOptionsDropdown.classList.remove("show");
+    dom.equipmentOptionsDropdown?.classList.remove("show");
+  }
+
+  function closePanel(panel) {
+    if (!panel) return;
+    panel.classList.remove("show");
+    panel.style.display = "none";
+  }
+
+  function getEquipmentFormPanel() {
+  return (
+    dom.formPanel ||
+    byId("formPanel") ||
+    byId("equipmentFormPanel") ||
+    document.querySelector("#equipmentFormPanel") ||
+    document.querySelector("#formPanel")
+  );
+}
+
+function openPanel(panel) {
+  const targetPanel = panel || getEquipmentFormPanel();
+
+  if (!targetPanel) {
+    console.warn("Unable to open panel. Equipment form panel was not found.");
+    return;
+  }
+
+  targetPanel.style.display = "flex";
+  targetPanel.classList.add("show");
+}
+
+  function closeAllRightPanels() {
+    [
+      dom.formPanel,
+      dom.inventoryFormPanel,
+      dom.vendorFormPanel,
+      dom.workOrderFormPanel,
+      dom.poFormPanel,
+      dom.settingsPanel,
+      dom.servicesPanel
+    ].forEach(closePanel);
+  }
+
+  function hideEquipmentProfileWithoutClearingSelection() {
+    if (dom.equipmentProfileModal) {
+      dom.equipmentProfileModal.classList.remove("show");
+    }
+
+    if (dom.equipmentProfileSection) {
+      dom.equipmentProfileSection.classList.remove("show");
     }
   }
 
-  function closeAllRightPanels() {
-    if (dom.formPanel) dom.formPanel.style.display = "none";
-    if (dom.inventoryFormPanel) dom.inventoryFormPanel.style.display = "none";
-    if (dom.vendorFormPanel) dom.vendorFormPanel.style.display = "none";
-    if (dom.workOrderFormPanel) dom.workOrderFormPanel.style.display = "none";
-    if (dom.poFormPanel) dom.poFormPanel.style.display = "none";
-    if (dom.settingsPanel) dom.settingsPanel.style.display = "none";
-    if (dom.servicesPanel) dom.servicesPanel.style.display = "none";
+  function renderCustomFieldInputs(values = {}) {
+    if (!dom.formPanel) return;
+
+    const formButtons = dom.formPanel.querySelector(".formButtons");
+    if (!formButtons) return;
+
+    dom.formPanel.querySelectorAll(".dynamicCustomField").forEach(el => el.remove());
+
+    equipmentColumns.filter(col => col.custom).forEach(col => {
+      const wrap = document.createElement("div");
+      wrap.className = "fieldGroup dynamicCustomField";
+
+      const label = document.createElement("label");
+      label.setAttribute("for", `customField_${col.key}`);
+      label.textContent = col.label;
+
+      const input = document.createElement("input");
+      input.id = `customField_${col.key}`;
+      input.type = "text";
+      input.placeholder = col.label;
+      input.value = values[col.key] ?? "";
+
+      wrap.appendChild(label);
+      wrap.appendChild(input);
+      formButtons.parentNode.insertBefore(wrap, formButtons);
+    });
   }
 
   function clearForm() {
-    if (dom.unit) dom.unit.value = "";
-    if (dom.type) dom.type.value = "";
-    if (dom.year) dom.year.value = "";
-    if (dom.vin) dom.vin.value = "";
-    if (dom.plate) dom.plate.value = "";
-    if (dom.state) dom.state.value = "";
+    [
+      "unit",
+      "type",
+      "year",
+      "vin",
+      "plate",
+      "state",
+      "location",
+      "pm",
+      "business",
+      "rim",
+      "size",
+      "pressure",
+      "manufacturer",
+      "bodyClass",
+      "driveType",
+      "fuelType",
+      "engine"
+    ].forEach(key => {
+      if (dom[key]) dom[key].value = "";
+    });
+
     if (dom.status) dom.status.selectedIndex = 0;
-    if (dom.location) dom.location.value = "";
-    if (dom.pm) dom.pm.value = "";
-    if (dom.business) dom.business.value = "";
-    if (dom.rim) dom.rim.value = "";
-    if (dom.size) dom.size.value = "";
-    if (dom.pressure) dom.pressure.value = "";
-    if (dom.manufacturer) dom.manufacturer.value = "";
-    if (dom.bodyClass) dom.bodyClass.value = "";
-    if (dom.driveType) dom.driveType.value = "";
-    if (dom.fuelType) dom.fuelType.value = "";
-    if (dom.engine) dom.engine.value = "";
     renderCustomFieldInputs();
   }
 
   function toggleButtons(mode) {
-    if (dom.saveBtn) {
-      dom.saveBtn.style.display =
-        mode === "save" && canEditEquipment() ? "inline-block" : "none";
-    }
-    if (dom.updateBtn) {
-      dom.updateBtn.style.display =
-        mode === "edit" && canEditEquipment() ? "inline-block" : "none";
-    }
-    if (dom.deleteBtn) {
-      dom.deleteBtn.style.display =
-        mode === "edit" && canDeleteEquipment() ? "inline-block" : "none";
-    }
+    if (dom.saveBtn) dom.saveBtn.style.display = mode === "save" && canEditEquipment() ? "inline-block" : "none";
+    if (dom.updateBtn) dom.updateBtn.style.display = mode === "edit" && canEditEquipment() ? "inline-block" : "none";
+    if (dom.deleteBtn) dom.deleteBtn.style.display = mode === "edit" && canDeleteEquipment() ? "inline-block" : "none";
   }
 
   function showAppModal({
@@ -454,7 +486,6 @@ export async function initEquipment() {
     }
 
     appModalLastFocus = document.activeElement;
-
     titleEl.textContent = title;
     messageEl.textContent = message;
     confirmBtn.textContent = confirmText || "OK";
@@ -472,6 +503,7 @@ export async function initEquipment() {
 
       const finish = result => {
         if (!appModalResolver) return;
+
         const currentResolve = appModalResolver;
         appModalResolver = null;
         modal.classList.remove("show");
@@ -481,6 +513,7 @@ export async function initEquipment() {
           if (appModalLastFocus && typeof appModalLastFocus.focus === "function") {
             appModalLastFocus.focus();
           }
+
           appModalLastFocus = null;
         }, 0);
       };
@@ -490,9 +523,7 @@ export async function initEquipment() {
       if (closeBtn) closeBtn.onclick = () => finish(false);
 
       modal.onclick = event => {
-        if (event.target === modal) {
-          finish(false);
-        }
+        if (event.target === modal) finish(false);
       };
 
       setTimeout(() => confirmBtn.focus(), 20);
@@ -542,11 +573,9 @@ export async function initEquipment() {
       engine: getValue("engine")
     };
 
-    equipmentColumns
-      .filter(col => col.custom)
-      .forEach(col => {
-        data[col.key] = getValue(`customField_${col.key}`);
-      });
+    equipmentColumns.filter(col => col.custom).forEach(col => {
+      data[col.key] = getValue(`customField_${col.key}`);
+    });
 
     return data;
   }
@@ -583,21 +612,13 @@ export async function initEquipment() {
 
   function exitEquipmentSelectionMode(clear = true) {
     equipmentSelectionMode = false;
-    if (clear) {
-      clearSelections(selectedEquipmentIds);
-    }
+    if (clear) clearSelections(selectedEquipmentIds);
     refreshEquipmentSelectionUi();
     renderEquipmentTable();
   }
 
   async function deleteSelectedEquipmentFromMainPage() {
-    if (!(await requirePermission(
-      canDeleteEquipment,
-      "Permission Required",
-      "You do not have permission to delete equipment."
-    ))) {
-      return;
-    }
+    if (!(await requirePermission(canDeleteEquipment, "Permission Required", "You do not have permission to delete equipment."))) return;
 
     if (!equipmentSelectionMode) {
       enterEquipmentSelectionMode();
@@ -621,19 +642,11 @@ export async function initEquipment() {
 
     if (!confirmed) return;
 
-    const normalizedSelectedIds = new Set(
-      [...selectedEquipmentIds].map(id => String(id))
-    );
-
-    const selectedRecords = equipmentList.filter(eq =>
-      normalizedSelectedIds.has(String(eq.id))
-    );
+    const normalizedSelectedIds = new Set([...selectedEquipmentIds].map(id => String(id)));
+    const selectedRecords = equipmentList.filter(eq => normalizedSelectedIds.has(String(eq.id)));
 
     deletedEquipment.push(...selectedRecords);
-
-    equipmentList = equipmentList.filter(
-      eq => !normalizedSelectedIds.has(String(eq.id))
-    );
+    equipmentList = equipmentList.filter(eq => !normalizedSelectedIds.has(String(eq.id)));
 
     suppressLiveReload(3500);
     await persistEquipment();
@@ -641,13 +654,8 @@ export async function initEquipment() {
 
     exitEquipmentSelectionMode(true);
 
-    if (
-      selectedEquipmentId != null &&
-      normalizedSelectedIds.has(String(selectedEquipmentId))
-    ) {
-      selectedEquipmentId = null;
-      if (dom.equipmentProfileSection) dom.equipmentProfileSection.style.display = "none";
-      if (dom.equipmentListSection) dom.equipmentListSection.style.display = "block";
+    if (selectedEquipmentId != null && normalizedSelectedIds.has(String(selectedEquipmentId))) {
+      closeEquipmentProfile();
     }
   }
 
@@ -684,12 +692,12 @@ export async function initEquipment() {
   }
 
   function clearColumnManagerMessage() {
-    const msg = byId("columnManagerMessage");
-    if (msg) msg.remove();
+    byId("columnManagerMessage")?.remove();
   }
 
   function showColumnManagerMessage(message, type = "error") {
     const existing = byId("columnManagerMessage");
+
     if (existing) {
       existing.textContent = message;
       existing.className = `columnManagerMessage ${type}`;
@@ -707,11 +715,7 @@ export async function initEquipment() {
   }
 
   async function addCustomEquipmentColumn(label) {
-    if (!(await requirePermission(
-      canEditEquipment,
-      "Permission Required",
-      "You do not have permission to modify equipment columns."
-    ))) {
+    if (!(await requirePermission(canEditEquipment, "Permission Required", "You do not have permission to modify equipment columns."))) {
       return false;
     }
 
@@ -727,9 +731,7 @@ export async function initEquipment() {
       return false;
     }
 
-    const labelExists = equipmentColumns.some(
-      col => normalizeLower(col.label) === cleanLabel.toLowerCase()
-    );
+    const labelExists = equipmentColumns.some(col => normalizeLower(col.label) === cleanLabel.toLowerCase());
 
     if (labelExists) {
       showColumnManagerMessage("That column already exists.");
@@ -756,18 +758,16 @@ export async function initEquipment() {
 
     suppressLiveReload(3000);
     await persistEquipment();
+
     persistGrid();
     renderEquipmentTable();
     renderColumnManager();
+
     return true;
   }
 
   async function deleteCustomEquipmentColumn(key) {
-    if (!(await requirePermission(
-      canEditEquipment,
-      "Permission Required",
-      "You do not have permission to modify equipment columns."
-    ))) {
+    if (!(await requirePermission(canEditEquipment, "Permission Required", "You do not have permission to modify equipment columns."))) {
       return;
     }
 
@@ -798,6 +798,10 @@ export async function initEquipment() {
       delete equipmentGridState.filters[key];
     }
 
+    if (equipmentGridState.columnWidths?.[key]) {
+      delete equipmentGridState.columnWidths[key];
+    }
+
     if (equipmentGridState.sortKey === key) {
       equipmentGridState.sortKey = "unit";
       equipmentGridState.sortDirection = "asc";
@@ -805,40 +809,10 @@ export async function initEquipment() {
 
     suppressLiveReload(3000);
     await persistEquipment();
+
     persistGrid();
     renderEquipmentTable();
     renderColumnManager();
-  }
-
-  function renderCustomFieldInputs(values = {}) {
-    if (!dom.formPanel) return;
-    const formButtons = dom.formPanel.querySelector(".formButtons");
-    if (!formButtons) return;
-
-    dom.formPanel.querySelectorAll(".dynamicCustomField").forEach(el => el.remove());
-
-    const customColumns = equipmentColumns.filter(col => col.custom);
-    if (!customColumns.length) return;
-
-    customColumns.forEach(col => {
-      const wrap = document.createElement("div");
-      wrap.className = "dynamicCustomField";
-
-      const label = document.createElement("label");
-      label.setAttribute("for", `customField_${col.key}`);
-      label.textContent = col.label;
-
-      const input = document.createElement("input");
-      input.id = `customField_${col.key}`;
-      input.type = "text";
-      input.placeholder = col.label;
-      input.value = values[col.key] ?? "";
-
-      wrap.appendChild(label);
-      wrap.appendChild(input);
-
-      formButtons.parentNode.insertBefore(wrap, formButtons);
-    });
   }
 
   function renderColumnManager() {
@@ -860,6 +834,7 @@ export async function initEquipment() {
 
       checkbox.addEventListener("change", () => {
         col.visible = checkbox.checked;
+
         const visibleCount = equipmentColumns.filter(c => c.visible).length;
 
         if (visibleCount === 0) {
@@ -886,9 +861,7 @@ export async function initEquipment() {
         deleteBtn.type = "button";
         deleteBtn.className = "deleteColumnBtn";
         deleteBtn.textContent = "Delete";
-        deleteBtn.addEventListener("click", () => {
-          deleteCustomEquipmentColumn(col.key);
-        });
+        deleteBtn.addEventListener("click", () => deleteCustomEquipmentColumn(col.key));
         row.appendChild(deleteBtn);
       }
 
@@ -907,6 +880,7 @@ export async function initEquipment() {
       const btn = document.createElement("button");
       btn.type = "button";
       btn.textContent = "Add";
+
       btn.addEventListener("click", async () => {
         const added = await addCustomEquipmentColumn(input.value);
         if (added) input.value = "";
@@ -928,23 +902,140 @@ export async function initEquipment() {
 
   function openColumnManager() {
     if (!dom.columnManagerPanel) return;
+
     renderColumnManager();
-    dom.columnManagerPanel.style.display = "block";
+    dom.columnManagerPanel.style.display = "flex";
+    dom.columnManagerPanel.classList.add("show");
   }
 
   function closeColumnManager() {
-    if (!dom.columnManagerPanel) return;
-    dom.columnManagerPanel.style.display = "none";
+    closePanel(dom.columnManagerPanel);
   }
 
   function getVisibleRows() {
     return getFilteredNormalizedEquipment();
   }
 
+  function getEquipmentColumnWidth(columnKey) {
+    const savedWidth = Number(equipmentGridState.columnWidths?.[columnKey]);
+
+    if (Number.isFinite(savedWidth) && savedWidth > 0) {
+      return Math.max(70, savedWidth);
+    }
+
+    const defaultWidths = {
+      unit: 120,
+      type: 150,
+      status: 130,
+      location: 170,
+      year: 100,
+      vin: 220,
+      plate: 130,
+      state: 120,
+      pm: 170,
+      business: 190,
+      manufacturer: 170,
+      bodyClass: 160,
+      driveType: 150,
+      fuelType: 140,
+      engine: 180
+    };
+
+    return defaultWidths[columnKey] || 150;
+  }
+
+  function setEquipmentColumnWidth(columnKey, width) {
+    const safeKey = String(columnKey || "").trim();
+    if (!safeKey) return;
+
+    const safeWidth = Math.max(70, Math.round(Number(width) || 150));
+
+    equipmentGridState.columnWidths = {
+      ...(equipmentGridState.columnWidths || {}),
+      [safeKey]: safeWidth
+    };
+  }
+
+  function applyEquipmentColumnWidths() {
+    if (!dom.equipmentTable) return;
+
+    const visibleColumns = equipmentColumns.filter(col => col.visible);
+
+    visibleColumns.forEach(col => {
+      const width = getEquipmentColumnWidth(col.key);
+      const selector = `[data-equipment-column-key="${safeCssEscape(col.key)}"]`;
+
+      dom.equipmentTable.querySelectorAll(selector).forEach(cell => {
+        cell.style.width = `${width}px`;
+        cell.style.minWidth = `${width}px`;
+        cell.style.maxWidth = `${width}px`;
+      });
+    });
+  }
+
+  function enhanceEquipmentResizableHeaders() {
+    if (!dom.equipmentTableHeaderRow) return;
+
+    const visibleColumns = equipmentColumns.filter(col => col.visible);
+    const headerCells = [...dom.equipmentTableHeaderRow.querySelectorAll("th")];
+
+    visibleColumns.forEach((col, index) => {
+      const th = headerCells[index + 1];
+      if (!th) return;
+
+      th.dataset.equipmentColumnKey = col.key;
+      th.classList.add("resizableGridHeader");
+
+      const width = getEquipmentColumnWidth(col.key);
+      th.style.width = `${width}px`;
+      th.style.minWidth = `${width}px`;
+      th.style.maxWidth = `${width}px`;
+
+      if (th.querySelector(".gridColumnResizeHandle")) return;
+
+      const handle = document.createElement("span");
+      handle.className = "gridColumnResizeHandle";
+      handle.title = "Drag to resize column";
+
+      handle.addEventListener("mousedown", event => {
+        event.preventDefault();
+        event.stopPropagation();
+
+        const startX = event.clientX;
+        const startWidth = th.offsetWidth;
+
+        document.body.classList.add("isResizingGridColumn");
+
+        const onMouseMove = moveEvent => {
+          const diff = moveEvent.clientX - startX;
+          const nextWidth = Math.max(70, startWidth + diff);
+
+          setEquipmentColumnWidth(col.key, nextWidth);
+          applyEquipmentColumnWidths();
+        };
+
+        const onMouseUp = () => {
+          document.body.classList.remove("isResizingGridColumn");
+
+          document.removeEventListener("mousemove", onMouseMove);
+          document.removeEventListener("mouseup", onMouseUp);
+
+          persistGrid();
+        };
+
+        document.addEventListener("mousemove", onMouseMove);
+        document.addEventListener("mouseup", onMouseUp);
+      });
+
+      th.appendChild(handle);
+    });
+  }
+
   function renderEquipmentTable() {
     if (!dom.equipmentTable || !dom.equipmentTableHeaderRow) return;
 
     const rows = getVisibleRows();
+    const visibleColumns = equipmentColumns.filter(col => col.visible);
 
     renderGridHeaderGeneric({
       headerRow: dom.equipmentTableHeaderRow,
@@ -964,7 +1055,10 @@ export async function initEquipment() {
       buildColumnFiltersFn: buildColumnFiltersGeneric
     });
 
+    enhanceEquipmentResizableHeaders();
+
     let tbody = dom.equipmentTable.querySelector("tbody");
+
     if (!tbody) {
       tbody = document.createElement("tbody");
       dom.equipmentTable.appendChild(tbody);
@@ -975,11 +1069,15 @@ export async function initEquipment() {
     if (!rows.length) {
       tbody.innerHTML = `
         <tr>
-          <td colspan="${equipmentColumns.filter(col => col.visible).length + 1}" class="emptyCell">
+          <td colspan="${visibleColumns.length + 1}" class="emptyCell">
             No equipment found.
           </td>
         </tr>
       `;
+
+      applyEquipmentColumnWidths();
+      refreshEquipmentSelectionUi();
+      applyEquipmentPermissionUi();
       return;
     }
 
@@ -991,31 +1089,41 @@ export async function initEquipment() {
         tr.classList.toggle("selectedRow", selectedEquipmentIds.has(String(eq.id)));
       }
 
-      let html = "";
+      const selectTd = document.createElement("td");
+      selectTd.className = "selectColumnCell";
 
-      html += `
-        <td class="selectColumnCell">
-          ${equipmentSelectionMode
-            ? `<input type="checkbox" class="gridRowCheckbox" ${selectedEquipmentIds.has(String(eq.id)) ? "checked" : ""} />`
-            : ""}
-        </td>
-      `;
+      if (equipmentSelectionMode) {
+        const checkbox = document.createElement("input");
+        checkbox.type = "checkbox";
+        checkbox.className = "gridRowCheckbox";
+        checkbox.checked = selectedEquipmentIds.has(String(eq.id));
 
-      equipmentColumns.filter(col => col.visible).forEach(col => {
-        html += `<td>${escapeHtml(eq[col.key] ?? "")}</td>`;
+        checkbox.addEventListener("click", event => {
+          event.preventDefault();
+          event.stopPropagation();
+
+          toggleRowSelection(selectedEquipmentIds, eq.id);
+          refreshEquipmentSelectionUi();
+          renderEquipmentTable();
+        });
+
+        selectTd.appendChild(checkbox);
+      }
+
+      tr.appendChild(selectTd);
+
+      visibleColumns.forEach(col => {
+        const td = document.createElement("td");
+        td.dataset.equipmentColumnKey = col.key;
+        td.textContent = eq[col.key] ?? "";
+        tr.appendChild(td);
       });
 
-      tr.innerHTML = html;
-
       tr.addEventListener("click", event => {
-        if (equipmentSelectionMode) {
-          if (event.target.closest(".gridRowCheckbox")) {
-            toggleRowSelection(selectedEquipmentIds, eq.id);
-            refreshEquipmentSelectionUi();
-            renderEquipmentTable();
-            return;
-          }
+        if (event.target.closest(".gridRowCheckbox")) return;
+        if (event.target.closest(".gridColumnResizeHandle")) return;
 
+        if (equipmentSelectionMode) {
           toggleRowSelection(selectedEquipmentIds, eq.id);
           refreshEquipmentSelectionUi();
           renderEquipmentTable();
@@ -1028,66 +1136,96 @@ export async function initEquipment() {
       tbody.appendChild(tr);
     });
 
+    applyEquipmentColumnWidths();
     refreshEquipmentSelectionUi();
     applyEquipmentPermissionUi();
   }
 
-  function openEquipmentFormForAdd() {
+  function openEquipmentFormForAdd(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+    }
+
     if (!canEditEquipment()) return;
 
     editingId = null;
+    selectedEquipmentId = null;
+
     clearForm();
     renderCustomFieldInputs({});
     toggleButtons("save");
 
-    if (dom.formTitle) dom.formTitle.textContent = "Add Equipment";
+    if (dom.formTitle) {
+      dom.formTitle.textContent = "Add Equipment";
+    }
 
-    closeAllRightPanels();
-    if (dom.formPanel) dom.formPanel.style.display = "block";
+    const equipmentFormPanel = getEquipmentFormPanel();
+
+hideEquipmentProfileWithoutClearingSelection();
+closeAllRightPanels();
+openPanel(equipmentFormPanel);
+
+    setTimeout(() => {
+      dom.unit?.focus();
+      dom.unit?.select();
+    }, 50);
   }
 
-  function openEquipmentFormForEdit(eq) {
-    if (!canEditEquipment()) return;
-    if (!eq) return;
+ function openEquipmentFormForEdit(eq) {
+  console.log("OPEN EDIT FORM", eq, dom.formPanel);
 
+  if (!canEditEquipment() || !eq) return;
     editingId = String(eq.id);
+    selectedEquipmentId = String(eq.id);
 
-    if (dom.unit) dom.unit.value = eq.unit || "";
-    if (dom.type) dom.type.value = eq.type || "";
-    if (dom.year) dom.year.value = eq.year || "";
-    if (dom.vin) dom.vin.value = eq.vin || "";
-    if (dom.plate) dom.plate.value = eq.plate || "";
-    if (dom.state) dom.state.value = eq.state || "";
-    if (dom.status) dom.status.value = eq.status || "";
-    if (dom.location) dom.location.value = eq.location || "";
-    if (dom.pm) dom.pm.value = eq.pm || "";
-    if (dom.business) dom.business.value = eq.business || "";
-    if (dom.rim) dom.rim.value = eq.rim || "";
-    if (dom.size) dom.size.value = eq.size || "";
-    if (dom.pressure) dom.pressure.value = eq.pressure || "";
-    if (dom.manufacturer) dom.manufacturer.value = eq.manufacturer || "";
-    if (dom.bodyClass) dom.bodyClass.value = eq.bodyClass || "";
-    if (dom.driveType) dom.driveType.value = eq.driveType || "";
-    if (dom.fuelType) dom.fuelType.value = eq.fuelType || "";
-    if (dom.engine) dom.engine.value = eq.engine || "";
+    [
+      "unit",
+      "type",
+      "year",
+      "vin",
+      "plate",
+      "state",
+      "status",
+      "location",
+      "pm",
+      "business",
+      "rim",
+      "size",
+      "pressure",
+      "manufacturer",
+      "bodyClass",
+      "driveType",
+      "fuelType",
+      "engine"
+    ].forEach(key => {
+      if (dom[key]) {
+        dom[key].value = eq[key] || "";
+      }
+    });
 
     renderCustomFieldInputs(eq);
     toggleButtons("edit");
 
-    if (dom.formTitle) dom.formTitle.textContent = "Edit Equipment";
+    if (dom.formTitle) {
+      dom.formTitle.textContent = "Edit Equipment";
+    }
 
-    closeAllRightPanels();
-    if (dom.formPanel) dom.formPanel.style.display = "block";
+    const equipmentFormPanel = getEquipmentFormPanel();
+
+hideEquipmentProfileWithoutClearingSelection();
+closeAllRightPanels();
+openPanel(equipmentFormPanel);
+applyEquipmentPermissionUi();
+
+    setTimeout(() => {
+      dom.unit?.focus();
+      dom.unit?.select();
+    }, 50);
   }
 
   async function saveEquipmentFromForm() {
-    if (!(await requirePermission(
-      canEditEquipment,
-      "Permission Required",
-      "You do not have permission to save equipment."
-    ))) {
-      return;
-    }
+    if (!(await requirePermission(canEditEquipment, "Permission Required", "You do not have permission to save equipment."))) return;
 
     const data = getFormData();
 
@@ -1109,22 +1247,25 @@ export async function initEquipment() {
     });
 
     equipmentList.push(record);
+
     await persistEquipment();
 
     editingId = null;
-    if (dom.formPanel) dom.formPanel.style.display = "none";
+    selectedEquipmentId = String(record.id);
+
+    closePanel(dom.formPanel);
     renderEquipmentTable();
+    showEquipmentProfile(record.id);
+
+    try {
+      window.dispatchEvent(new CustomEvent("fleet:equipment-changed"));
+    } catch (error) {
+      console.warn("Unable to dispatch equipment change event:", error);
+    }
   }
 
   async function updateEquipmentFromForm() {
-    if (!(await requirePermission(
-      canEditEquipment,
-      "Permission Required",
-      "You do not have permission to update equipment."
-    ))) {
-      return;
-    }
-
+    if (!(await requirePermission(canEditEquipment, "Permission Required", "You do not have permission to update equipment."))) return;
     if (editingId == null) return;
 
     const data = getFormData();
@@ -1150,37 +1291,34 @@ export async function initEquipment() {
 
     await persistEquipment();
 
-    if (dom.formPanel) dom.formPanel.style.display = "none";
-    renderEquipmentTable();
+    const editedId = String(editingId);
 
-    if (selectedEquipmentId != null && String(selectedEquipmentId) === String(editingId)) {
-      showEquipmentProfile(editingId);
+    editingId = null;
+    selectedEquipmentId = editedId;
+
+    closePanel(dom.formPanel);
+    renderEquipmentTable();
+    showEquipmentProfile(editedId);
+
+    try {
+      window.dispatchEvent(new CustomEvent("fleet:equipment-changed"));
+    } catch (error) {
+      console.warn("Unable to dispatch equipment change event:", error);
     }
   }
 
   async function deleteSingleEquipmentFromForm() {
-    if (!(await requirePermission(
-      canDeleteEquipment,
-      "Permission Required",
-      "You do not have permission to delete equipment."
-    ))) {
-      return;
-    }
-
+    if (!(await requirePermission(canDeleteEquipment, "Permission Required", "You do not have permission to delete equipment."))) return;
     if (editingId == null) return;
 
     const eq = equipmentList.find(item => String(item.id) === String(editingId));
     if (!eq) return;
 
-    const confirmed = await showConfirmModal(
-      "Delete Equipment",
-      `Delete unit "${eq.unit}"?`,
-      {
-        confirmText: "Delete",
-        cancelText: "Cancel",
-        danger: true
-      }
-    );
+    const confirmed = await showConfirmModal("Delete Equipment", `Delete unit "${eq.unit}"?`, {
+      confirmText: "Delete",
+      cancelText: "Cancel",
+      danger: true
+    });
 
     if (!confirmed) return;
 
@@ -1191,8 +1329,17 @@ export async function initEquipment() {
     await persistDeletedEquipment();
 
     editingId = null;
-    if (dom.formPanel) dom.formPanel.style.display = "none";
+    selectedEquipmentId = null;
+
+    closePanel(dom.formPanel);
+    closeEquipmentProfile();
     renderEquipmentTable();
+
+    try {
+      window.dispatchEvent(new CustomEvent("fleet:equipment-changed"));
+    } catch (error) {
+      console.warn("Unable to dispatch equipment change event:", error);
+    }
   }
 
   function getSelectedEquipmentRecord() {
@@ -1225,16 +1372,21 @@ export async function initEquipment() {
 
   function renderEquipmentHistory(eq) {
     const tbody = byId("equipmentHistoryTable")?.querySelector("tbody");
-    if (!tbody) return;
+    if (!tbody || !eq) return;
 
     const unit = normalizeLower(eq.unit);
+
     const rows = safeArray(workOrdersCache)
-      .filter(wo => normalizeLower(wo.equipmentNumber) === unit)
-      .sort((a, b) =>
-        String(b.opened || b.date || b.woDate || "").localeCompare(
+      .filter(wo => {
+        const woEquipmentNumber = normalizeLower(wo.equipmentNumber);
+        const woEquipmentId = String(wo.equipmentId || "");
+        return woEquipmentNumber === unit || woEquipmentId === String(eq.id);
+      })
+      .sort((a, b) => {
+        return String(b.opened || b.date || b.woDate || "").localeCompare(
           String(a.opened || a.date || a.woDate || "")
-        )
-      );
+        );
+      });
 
     tbody.innerHTML = "";
 
@@ -1249,17 +1401,20 @@ export async function initEquipment() {
 
     rows.forEach(wo => {
       const tr = document.createElement("tr");
+
       tr.innerHTML = `
         <td>${escapeHtml(wo.workOrderNumber || wo.woNumber || "—")}</td>
         <td>${escapeHtml(wo.opened || wo.date || wo.woDate || "—")}</td>
         <td>${escapeHtml(wo.status || "—")}</td>
         <td>${escapeHtml(wo.notes || "—")}</td>
-        <td>${escapeHtml(String(wo.total || "0.00"))}</td>
+        <td>${escapeHtml(String(Number(wo.total || 0).toFixed(2)))}</td>
       `;
+
       tbody.appendChild(tr);
     });
 
     const totalCost = rows.reduce((sum, wo) => sum + Number(wo.total || 0), 0);
+
     setText("profileRepairCount", String(rows.length));
     setText("profileRepairCost", totalCost.toFixed(2));
     setText("filteredRepairCount", String(rows.length));
@@ -1273,6 +1428,7 @@ export async function initEquipment() {
     tbody.innerHTML = "";
 
     const eq = equipmentList.find(item => String(item.id) === String(equipmentId));
+
     if (!eq) {
       tbody.innerHTML = `<tr><td colspan="8" class="emptyCell">No assigned services found for this equipment.</td></tr>`;
       return;
@@ -1293,10 +1449,10 @@ export async function initEquipment() {
 
     snapshot.services.forEach(service => {
       const matchedTemplateTask = getTemplateTaskForServiceCode(eq, settingsCache, service.code);
-      const selectorOption =
-        getServiceSelectorOptions(eq, settingsCache).find(item => item.code === service.code) || null;
+      const selectorOption = getServiceSelectorOptions(eq, settingsCache).find(item => item.code === service.code) || null;
 
       const row = document.createElement("tr");
+
       row.innerHTML = `
         <td>${escapeHtml(eq.location || "—")}</td>
         <td>
@@ -1318,18 +1474,188 @@ export async function initEquipment() {
                     ? "Scheduled"
                     : "No History"
           }</strong>
-          <div class="muted">${service.dueDate ? `Due ${escapeHtml(formatDateDisplay(service.dueDate))}` : "No completion history"}</div>
+          <div class="muted">${
+            service.dueDate
+              ? `Due ${escapeHtml(formatDateDisplay(service.dueDate))}`
+              : "No completion history"
+          }</div>
         </td>
-        <td>
-          ${service.notes ? `<div>${escapeHtml(service.notes)}</div>` : `<div class="muted">—</div>`}
-        </td>
-        <td>
-          ${canEditEquipment() ? `<button type="button" class="smallBtn" data-update-service-code="${escapeHtml(service.code)}">Update Tracking</button>` : ""}
-        </td>
+        <td>${service.notes ? `<div>${escapeHtml(service.notes)}</div>` : `<div class="muted">—</div>`}</td>
+        <td>${
+          canEditEquipment()
+            ? `<button type="button" class="smallBtn" data-update-service-code="${escapeHtml(service.code)}">Update Tracking</button>`
+            : ""
+        }</td>
       `;
+
       tbody.appendChild(row);
     });
   }
+const PROFILE_EDIT_FIELDS = [
+  { key: "type", elId: "profileType", label: "Type" },
+  { key: "year", elId: "profileYear", label: "Year" },
+  { key: "vin", elId: "profileVin", label: "VIN" },
+  { key: "plate", elId: "profilePlate", label: "Plate" },
+  { key: "state", elId: "profileState", label: "State" },
+  { key: "status", elId: "profileStatus", label: "Status" },
+  { key: "location", elId: "profileLocation", label: "Location" },
+  { key: "pm", elId: "profilePM", label: "PM Template" },
+  { key: "business", elId: "profileBusiness", label: "Business" },
+  { key: "rim", elId: "profileRim", label: "Rim" },
+  { key: "size", elId: "profileSize", label: "Size" },
+  { key: "pressure", elId: "profilePressure", label: "Pressure" },
+  { key: "manufacturer", elId: "profileManufacturer", label: "Manufacturer" },
+  { key: "bodyClass", elId: "profileBodyClass", label: "Body Class" },
+  { key: "driveType", elId: "profileDriveType", label: "Drive Type" },
+  { key: "fuelType", elId: "profileFuelType", label: "Fuel Type" },
+  { key: "engine", elId: "profileEngine", label: "Engine" }
+];
+
+function getProfileFieldValue(elId) {
+  const el = byId(elId);
+  if (!el) return "";
+
+  const value = String(el.textContent || "").trim();
+  return value === "—" ? "" : value;
+}
+
+function setProfileFieldEditable(enabled) {
+  PROFILE_EDIT_FIELDS.forEach(field => {
+    const el = byId(field.elId);
+    if (!el) return;
+
+    el.contentEditable = enabled ? "true" : "false";
+    el.classList.toggle("profileValueEditing", enabled);
+
+    if (enabled) {
+      el.setAttribute("role", "textbox");
+      el.setAttribute("aria-label", field.label);
+      el.setAttribute("spellcheck", "false");
+    } else {
+      el.removeAttribute("role");
+      el.removeAttribute("aria-label");
+      el.removeAttribute("spellcheck");
+    }
+  });
+}
+
+function ensureProfileEditButtons() {
+  const actions = document.querySelector("#equipmentProfileModal .profileHeaderActions");
+  if (!actions) return;
+
+  let cancelBtn = byId("cancelProfileEditBtn");
+
+  if (!cancelBtn) {
+    cancelBtn = document.createElement("button");
+    cancelBtn.id = "cancelProfileEditBtn";
+    cancelBtn.type = "button";
+    cancelBtn.textContent = "Cancel";
+    cancelBtn.style.display = "none";
+    actions.insertBefore(cancelBtn, byId("closeEquipmentProfileBtn"));
+  }
+
+  cancelBtn.onclick = cancelProfileEdit;
+}
+
+function setProfileEditUi(enabled) {
+  profileEditMode = enabled;
+  setProfileFieldEditable(enabled);
+  ensureProfileEditButtons();
+
+  const editBtn = byId("editProfileBtn");
+  const cancelBtn = byId("cancelProfileEditBtn");
+
+  if (editBtn) {
+    editBtn.textContent = enabled ? "Save Changes" : "Edit Equipment";
+    editBtn.classList.toggle("successBtn", enabled);
+  }
+
+  if (cancelBtn) {
+    cancelBtn.style.display = enabled ? "inline-flex" : "none";
+  }
+
+  const modal = byId("equipmentProfileModal");
+  modal?.classList.toggle("profileEditing", enabled);
+}
+
+function startProfileEdit() {
+  const eq = getSelectedEquipmentRecord();
+
+  if (!eq) {
+    console.warn("Cannot edit profile. No selected equipment record found.");
+    return;
+  }
+
+  profileEditOriginalData = { ...eq };
+  setProfileEditUi(true);
+
+  const firstEditable = byId("profileType");
+  firstEditable?.focus();
+}
+
+function cancelProfileEdit() {
+  if (profileEditOriginalData) {
+    renderProfileBasics(profileEditOriginalData);
+  }
+
+  profileEditOriginalData = null;
+  setProfileEditUi(false);
+}
+
+async function saveProfileEdit() {
+  if (!(await requirePermission(canEditEquipment, "Permission Required", "You do not have permission to update equipment."))) {
+    return;
+  }
+
+  const eq = getSelectedEquipmentRecord();
+
+  if (!eq) {
+    console.warn("Cannot save profile edit. No selected equipment record found.");
+    return;
+  }
+
+  const index = equipmentList.findIndex(item => String(item.id) === String(eq.id));
+  if (index < 0) return;
+
+  const updates = {};
+
+  PROFILE_EDIT_FIELDS.forEach(field => {
+    updates[field.key] = getProfileFieldValue(field.elId);
+  });
+
+  equipmentList[index] = normalizeEquipmentRecord({
+    ...equipmentList[index],
+    ...updates,
+    id: eq.id
+  });
+
+  await persistEquipment();
+
+  const editedId = String(eq.id);
+  selectedEquipmentId = editedId;
+  profileEditOriginalData = null;
+
+  setProfileEditUi(false);
+  renderEquipmentTable();
+  showEquipmentProfile(editedId);
+
+  try {
+    window.dispatchEvent(new CustomEvent("fleet:equipment-changed"));
+  } catch (error) {
+    console.warn("Unable to dispatch equipment change event:", error);
+  }
+}
+
+function handleInlineProfileEditClick(event) {
+  event.preventDefault();
+  event.stopPropagation();
+
+  if (profileEditMode) {
+    saveProfileEdit();
+  } else {
+    startProfileEdit();
+  }
+}
 
   function showEquipmentProfile(equipmentId) {
     const eq = equipmentList.find(item => String(item.id) === String(equipmentId));
@@ -1337,8 +1663,11 @@ export async function initEquipment() {
 
     selectedEquipmentId = String(eq.id);
 
-    if (dom.equipmentListSection) dom.equipmentListSection.style.display = "none";
-    if (dom.equipmentProfileSection) dom.equipmentProfileSection.style.display = "block";
+    if (dom.equipmentProfileModal) {
+      dom.equipmentProfileModal.classList.add("show");
+    } else if (dom.equipmentProfileSection) {
+      dom.equipmentProfileSection.classList.add("show");
+    }
 
     renderProfileBasics(eq);
     renderEquipmentHistory(eq);
@@ -1347,9 +1676,20 @@ export async function initEquipment() {
   }
 
   function closeEquipmentProfile() {
-    selectedEquipmentId = null;
-    if (dom.equipmentProfileSection) dom.equipmentProfileSection.style.display = "none";
-    if (dom.equipmentListSection) dom.equipmentListSection.style.display = "block";
+  profileEditMode = false;
+  profileEditOriginalData = null;
+  setProfileEditUi(false);
+
+  selectedEquipmentId = null;
+
+    if (dom.equipmentProfileModal) {
+      dom.equipmentProfileModal.classList.remove("show");
+    }
+
+    if (dom.equipmentProfileSection) {
+      dom.equipmentProfileSection.classList.remove("show");
+    }
+
     applyEquipmentPermissionUi();
   }
 
@@ -1368,7 +1708,7 @@ export async function initEquipment() {
     const service = snapshot.services.find(item => String(item.code) === String(serviceCode));
     if (!service) return;
 
-    activeServiceTrackingEquipmentId = String(equipmentId);
+    activeServiceTrackingEquipmentId = String(eq.id);
     activeServiceTrackingCode = String(serviceCode);
 
     if (dom.serviceTrackingTaskName) {
@@ -1397,19 +1737,10 @@ export async function initEquipment() {
   }
 
   async function saveServiceTrackingModal() {
-    if (!(await requirePermission(
-      canEditEquipment,
-      "Permission Required",
-      "You do not have permission to update service tracking."
-    ))) {
-      return;
-    }
-
+    if (!(await requirePermission(canEditEquipment, "Permission Required", "You do not have permission to update service tracking."))) return;
     if (!activeServiceTrackingEquipmentId || !activeServiceTrackingCode) return;
 
-    const index = equipmentList.findIndex(
-      item => String(item.id) === String(activeServiceTrackingEquipmentId)
-    );
+    const index = equipmentList.findIndex(item => String(item.id) === String(activeServiceTrackingEquipmentId));
     if (index < 0) return;
 
     const eq = equipmentList[index];
@@ -1431,6 +1762,7 @@ export async function initEquipment() {
     if (!entry) return;
 
     equipmentList[index] = applyServiceCompletionToEquipment(eq, entry);
+
     await persistEquipment();
 
     closeServiceTrackingModal();
@@ -1456,6 +1788,7 @@ export async function initEquipment() {
 
       if (selectedEquipmentId != null) {
         const eq = equipmentList.find(item => String(item.id) === String(selectedEquipmentId));
+
         if (eq) {
           renderProfileBasics(eq);
           renderEquipmentHistory(eq);
@@ -1469,118 +1802,110 @@ export async function initEquipment() {
     }
   }
 
+  function handleEditProfileClick(event) {
+    if (event) {
+      event.preventDefault();
+      event.stopPropagation();
+
+      if (typeof event.stopImmediatePropagation === "function") {
+        event.stopImmediatePropagation();
+      }
+    }
+
+    const activeId = selectedEquipmentId;
+
+    if (activeId == null) {
+      console.warn("Edit Equipment clicked, but selectedEquipmentId is missing.");
+      return;
+    }
+
+    const eq = equipmentList.find(item => String(item.id) === String(activeId));
+
+    if (!eq) {
+      console.warn("Edit Equipment clicked, but the selected equipment record was not found.");
+      return;
+    }
+
+    selectedEquipmentId = String(activeId);
+    openEquipmentFormForEdit(eq);
+  }
+
   function bindEventsOnce() {
     if (eventsBound) return;
     eventsBound = true;
 
     if (Array.isArray(dom.profileTabs) && dom.profileTabs.length) {
-  dom.profileTabs.forEach(tab => {
-    tab.addEventListener("click", () => {
-      const targetId = String(tab.dataset.profileTab || "").trim();
-      if (!targetId) return;
+      dom.profileTabs.forEach(tab => {
+        tab.addEventListener("click", () => {
+          const targetId = String(tab.dataset.profileTab || "").trim();
+          if (!targetId) return;
 
-      dom.profileTabs.forEach(item => item.classList.remove("active"));
-      dom.profileTabContents.forEach(content => content.classList.remove("active"));
+          dom.profileTabs.forEach(item => item.classList.remove("active"));
+          dom.profileTabContents.forEach(content => content.classList.remove("active"));
 
-      tab.classList.add("active");
-      document.getElementById(targetId)?.classList.add("active");
+          tab.classList.add("active");
+          document.getElementById(targetId)?.classList.add("active");
+        });
+      });
+    }
+
+    dom.openFormBtn?.addEventListener("click", openEquipmentFormForAdd);
+    dom.closeBtn?.addEventListener("click", () => closePanel(dom.formPanel));
+    dom.saveBtn?.addEventListener("click", saveEquipmentFromForm);
+    dom.updateBtn?.addEventListener("click", updateEquipmentFromForm);
+    dom.deleteBtn?.addEventListener("click", deleteSingleEquipmentFromForm);
+
+    dom.backToEquipmentListBtn?.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeEquipmentProfile();
     });
-  });
-}
 
-    if (dom.openFormBtn) {
-      dom.openFormBtn.addEventListener("click", openEquipmentFormForAdd);
-    }
+    dom.closeEquipmentProfileBtn?.addEventListener("click", event => {
+      event.preventDefault();
+      event.stopPropagation();
+      closeEquipmentProfile();
+    });
 
-    if (dom.closeBtn) {
-      dom.closeBtn.addEventListener("click", () => {
-        if (dom.formPanel) dom.formPanel.style.display = "none";
-      });
-    }
+    const editProfileButton = dom.editProfileBtn || byId("editProfileBtn");
 
-    if (dom.saveBtn) {
-      dom.saveBtn.addEventListener("click", saveEquipmentFromForm);
-    }
+editProfileButton?.addEventListener("click", handleInlineProfileEditClick);
 
-    if (dom.updateBtn) {
-      dom.updateBtn.addEventListener("click", updateEquipmentFromForm);
-    }
 
-    if (dom.deleteBtn) {
-      dom.deleteBtn.addEventListener("click", deleteSingleEquipmentFromForm);
-    }
+    dom.deleteSelectedEquipmentBtn?.addEventListener("click", deleteSelectedEquipmentFromMainPage);
+    dom.cancelEquipmentSelectionBtn?.addEventListener("click", () => exitEquipmentSelectionMode(true));
 
-    if (dom.backToEquipmentListBtn) {
-      dom.backToEquipmentListBtn.addEventListener("click", closeEquipmentProfile);
-    }
+    dom.equipmentGlobalSearch?.addEventListener("input", () => {
+      equipmentGridState.globalSearch = dom.equipmentGlobalSearch.value || "";
+      persistGrid();
+      renderEquipmentTable();
+    });
 
-    if (dom.editProfileBtn) {
-      dom.editProfileBtn.addEventListener("click", () => {
-        const eq = getSelectedEquipmentRecord();
-        if (eq) openEquipmentFormForEdit(eq);
-      });
-    }
+    dom.equipmentOptionsBtn?.addEventListener("click", event => {
+      event.stopPropagation();
+      dom.equipmentOptionsDropdown?.classList.toggle("show");
+    });
 
-    if (dom.deleteSelectedEquipmentBtn) {
-      dom.deleteSelectedEquipmentBtn.addEventListener("click", deleteSelectedEquipmentFromMainPage);
-    }
+    dom.manageEquipmentColumnsBtn?.addEventListener("click", () => {
+      closeEquipmentOptionsDropdown();
+      openColumnManager();
+    });
 
-    if (dom.cancelEquipmentSelectionBtn) {
-      dom.cancelEquipmentSelectionBtn.addEventListener("click", () => {
-        exitEquipmentSelectionMode(true);
-      });
-    }
+    dom.clearEquipmentFiltersBtn?.addEventListener("click", () => {
+      closeEquipmentOptionsDropdown();
+      clearEquipmentFilters();
+    });
 
-    if (dom.equipmentGlobalSearch) {
-      dom.equipmentGlobalSearch.addEventListener("input", () => {
-        equipmentGridState.globalSearch = dom.equipmentGlobalSearch.value || "";
-        persistGrid();
-        renderEquipmentTable();
-      });
-    }
+    dom.closeColumnManagerBtn?.addEventListener("click", closeColumnManager);
 
-    if (dom.equipmentOptionsBtn) {
-      dom.equipmentOptionsBtn.addEventListener("click", event => {
-        event.stopPropagation();
-        dom.equipmentOptionsDropdown?.classList.toggle("show");
-      });
-    }
-
-    if (dom.manageColumnsBtn) {
-      dom.manageColumnsBtn.addEventListener("click", () => {
-        closeEquipmentOptionsDropdown();
-        openColumnManager();
-      });
-    }
-
-    if (dom.clearEquipmentFiltersBtn) {
-      dom.clearEquipmentFiltersBtn.addEventListener("click", () => {
-        closeEquipmentOptionsDropdown();
-        clearEquipmentFilters();
-      });
-    }
-
-    if (dom.closeColumnManagerBtn) {
-      dom.closeColumnManagerBtn.addEventListener("click", closeColumnManager);
-    }
-
-    if (dom.serviceTrackingCloseBtn) {
-      dom.serviceTrackingCloseBtn.addEventListener("click", closeServiceTrackingModal);
-    }
-
-    if (dom.serviceTrackingCancelBtn) {
-      dom.serviceTrackingCancelBtn.addEventListener("click", closeServiceTrackingModal);
-    }
-
-    if (dom.serviceTrackingSaveBtn) {
-      dom.serviceTrackingSaveBtn.addEventListener("click", () => {
-        saveServiceTrackingModal();
-      });
-    }
+    dom.serviceTrackingCloseBtn?.addEventListener("click", closeServiceTrackingModal);
+    dom.serviceTrackingCancelBtn?.addEventListener("click", closeServiceTrackingModal);
+    dom.serviceTrackingSaveBtn?.addEventListener("click", saveServiceTrackingModal);
 
     byId("equipmentServicesTable")?.addEventListener("click", event => {
       const btn = event.target.closest("[data-update-service-code]");
       if (!btn || selectedEquipmentId == null) return;
+
       openServiceTrackingModal(selectedEquipmentId, btn.dataset.updateServiceCode);
     });
 
@@ -1595,12 +1920,11 @@ export async function initEquipment() {
       }
     });
 
-    window.addEventListener("fleet:equipment-changed", () => {
-      refreshEquipmentFromRemote();
-    });
+    window.addEventListener("fleet:equipment-changed", refreshEquipmentFromRemote);
 
     window.addEventListener("fleet:settings-changed", async () => {
       await refreshSettingsCache();
+
       if (selectedEquipmentId != null) {
         renderEquipmentServices(selectedEquipmentId);
       }
@@ -1609,8 +1933,10 @@ export async function initEquipment() {
     window.addEventListener("fleet:work-orders-changed", async () => {
       await refreshWorkOrdersCache();
       await refreshEquipmentFromRemote();
+
       if (selectedEquipmentId != null) {
         const eq = equipmentList.find(item => String(item.id) === String(selectedEquipmentId));
+
         if (eq) {
           renderEquipmentHistory(eq);
           renderEquipmentServices(selectedEquipmentId);
@@ -1622,6 +1948,7 @@ export async function initEquipment() {
       if (event.key === "fleetLoggedInUser") {
         applyEquipmentPermissionUi();
         renderEquipmentTable();
+
         if (selectedEquipmentId != null) {
           renderEquipmentServices(selectedEquipmentId);
         }
@@ -1629,8 +1956,16 @@ export async function initEquipment() {
     });
 
     document.addEventListener("keydown", event => {
-      if (event.key === "Escape" && dom.serviceTrackingModal?.classList.contains("show")) {
+      if (event.key !== "Escape") return;
+
+      if (dom.serviceTrackingModal?.classList.contains("show")) {
         closeServiceTrackingModal();
+      } else if (dom.formPanel?.classList.contains("show")) {
+        closePanel(dom.formPanel);
+      } else if (dom.columnManagerPanel?.classList.contains("show")) {
+        closeColumnManager();
+      } else if (dom.equipmentProfileModal?.classList.contains("show")) {
+        closeEquipmentProfile();
       }
     });
   }
@@ -1646,10 +1981,10 @@ export async function initEquipment() {
   applyEquipmentPermissionUi();
 
   return {
-  refresh: refreshEquipmentFromRemote,
-  renderEquipmentTable,
-  showEquipmentProfile,
-  openEquipmentFormForAdd,
-  applyEquipmentPermissionUi
-};
+    refresh: refreshEquipmentFromRemote,
+    renderEquipmentTable,
+    showEquipmentProfile,
+    openEquipmentFormForAdd,
+    applyEquipmentPermissionUi
+  };
 }

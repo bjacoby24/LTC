@@ -114,7 +114,9 @@ export function getDom() {
        EQUIPMENT - MAIN
     ------------------------- */
     equipmentListSection: byId("equipmentListSection"),
-    equipmentProfileSection: byId("equipmentProfileSection"),
+    equipmentProfileSection: byId("equipmentProfileModal"),
+equipmentProfileModal: byId("equipmentProfileModal"),
+closeEquipmentProfileBtn: byId("closeEquipmentProfileBtn"),
 
     openFormBtn: byId("openFormBtn"),
     editProfileBtn: byId("editProfileBtn"),
@@ -266,10 +268,22 @@ export function getDom() {
     deleteSelectedInventoryBtn: byId("deleteSelectedInventoryBtn"),
     cancelInventorySelectionBtn: byId("cancelInventorySelectionBtn"),
 
-    inventoryOptionsBtn: byId("inventoryOptionsBtn"),
+        inventoryOptionsBtn: byId("inventoryOptionsBtn"),
     inventoryOptionsDropdown: byId("inventoryOptionsDropdown"),
     manageInventoryColumnsBtn: byId("manageInventoryColumnsBtn"),
     clearInventoryFiltersBtn: byId("clearInventoryFiltersBtn"),
+
+    printInventoryBarcodesBtn: byId("printInventoryBarcodesBtn"),
+    previewInventoryBarcodesBtn: byId("previewInventoryBarcodesBtn"),
+    inventoryBarcodeModal: byId("inventoryBarcodeModal"),
+    closeInventoryBarcodeModalBtn: byId("closeInventoryBarcodeModalBtn"),
+    inventoryBarcodeCopiesInput: byId("inventoryBarcodeCopiesInput"),
+    inventoryBarcodeLabelSize: byId("inventoryBarcodeLabelSize"),
+    inventoryBarcodeType: byId("inventoryBarcodeType"),
+    refreshInventoryBarcodePreviewBtn: byId("refreshInventoryBarcodePreviewBtn"),
+    printInventoryBarcodePreviewBtn: byId("printInventoryBarcodePreviewBtn"),
+    inventoryBarcodePreview: byId("inventoryBarcodePreview"),
+
     importInventoryBtn: byId("importInventoryBtn"),
     exportInventoryBtn: byId("exportInventoryBtn"),
     inventoryImportInput: byId("inventoryImportInput"),
