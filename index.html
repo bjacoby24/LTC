@@ -4,401 +4,354 @@
   <meta charset="UTF-8" />
   <title>Fleet Manager</title>
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+
   <link rel="stylesheet" href="styles.css" />
+
   <script src="https://cdn.jsdelivr.net/npm/xlsx/dist/xlsx.full.min.js"></script>
   <script src="https://cdn.jsdelivr.net/npm/jsbarcode@3.11.6/dist/JsBarcode.all.min.js"></script>
 </head>
+
 <body>
+  <!-- LOGIN -->
   <div id="loginScreen" class="loginScreen">
     <div class="loginCard">
       <div class="loginBrand">Dana Maintenance Platform</div>
       <h1>Sign in</h1>
 
-
       <input id="loginUsername" type="text" placeholder="Username" />
       <input id="loginPassword" type="password" placeholder="Password" />
+
       <button id="loginBtn" type="button">Login</button>
+
       <p id="loginError" class="loginError"></p>
     </div>
   </div>
 
+  <!-- APP WRAPPER -->
   <div id="appWrapper" style="display: none;">
+    <!-- SIDEBAR -->
     <nav id="sidebar">
       <div class="sidebarTop">
         <div class="logoContainer" id="homeLogo">
           <img src="images/logo.png" alt="Liquid Transport Logo" />
         </div>
+
         <div class="sidebarBrandText"></div>
       </div>
 
       <div class="sidebarSectionLabel">Main Navigation</div>
 
-<a href="#" data-view="dashboardView" class="active">
-  <span class="navIcon">⌂</span>
-  <span>Dashboard</span>
-</a>
+      <a href="#" data-view="dashboardView" class="active">
+        <span class="navIcon">⌂</span>
+        <span>Dashboard</span>
+      </a>
 
-<a href="#" data-view="equipmentView">
-  <span class="navIcon">▣</span>
-  <span>Equipment</span>
-</a>
+      <a href="#" data-view="equipmentView">
+        <span class="navIcon">▣</span>
+        <span>Equipment</span>
+      </a>
 
-<a href="#" data-view="workOrdersView">
-  <span class="navIcon">🔧</span>
-  <span>Work Orders</span>
-</a>
+      <a href="#" data-view="workOrdersView">
+        <span class="navIcon">🔧</span>
+        <span>Work Orders</span>
+      </a>
 
-<a href="#" data-view="inventoryView">
-  <span class="navIcon">□</span>
-  <span>Inventory</span>
-</a>
+      <a href="#" data-view="inventoryView">
+        <span class="navIcon">□</span>
+        <span>Inventory</span>
+      </a>
 
-<a href="#" data-view="vendorsView">
-  <span class="navIcon">👥</span>
-  <span>Vendors</span>
-</a>
+      <a href="#" data-view="vendorsView">
+        <span class="navIcon">👥</span>
+        <span>Vendors</span>
+      </a>
 
-<a href="#" data-view="purchaseOrdersView">
-  <span class="navIcon">▤</span>
-  <span>Purchase Orders</span>
-</a>
+      <a href="#" data-view="purchaseOrdersView">
+        <span class="navIcon">▤</span>
+        <span>Purchase Orders</span>
+      </a>
 
-<div class="sidebarDivider"></div>
+      <div class="sidebarDivider"></div>
 
-<div class="sidebarSectionLabel">System</div>
+      <div class="sidebarSectionLabel">System</div>
 
-<a href="#" data-view="deletedEquipmentView">
-  <span class="navIcon">🗑</span>
-  <span>Deleted Equipment</span>
-</a>
+      <a href="#" data-view="deletedEquipmentView">
+        <span class="navIcon">🗑</span>
+        <span>Deleted Equipment</span>
+      </a>
 
-<a href="#" id="sidebarSettingsShortcut">
-  <span class="navIcon">⚙</span>
-  <span>Settings</span>
-</a>
+      <a href="#" id="sidebarSettingsShortcut">
+        <span class="navIcon">⚙</span>
+        <span>Settings</span>
+      </a>
     </nav>
 
+    <!-- MAIN APP -->
     <main id="app">
+      <!-- TOPBAR -->
       <header class="globalTopbar">
-  <div class="globalTopbarLeft">
-  </div>
+        <div class="globalTopbarLeft"></div>
 
-  <div class="globalTopbarRight">
+        <div class="globalTopbarRight">
+          <div class="topbarUser">
+            <span class="topbarUserIcon">♙</span>
+            <span id="currentUsername">Admin User</span>
+          </div>
 
+          <div class="globalMenu">
+            <button id="settingsMenuBtn" type="button">⚙ Settings</button>
 
-    <div class="topbarUser">
-      <span class="topbarUserIcon">♙</span>
-      <span id="currentUsername">Admin User</span>
-    </div>
+            <div id="settingsDropdown" class="settingsDropdown">
+              <button id="openSettingsBtn" type="button">Settings</button>
+              <button id="openServicesBtn" type="button">Services</button>
+              <button id="manageUsersBtn" type="button">User Management</button>
+              <button id="changePasswordBtn" type="button">Change Password</button>
+              <button id="logoutBtn" type="button">Logout</button>
+            </div>
+          </div>
+        </div>
+      </header>
 
-    <div class="globalMenu">
-      <button id="settingsMenuBtn" type="button">⚙ Settings</button>
-      <div id="settingsDropdown" class="settingsDropdown">
-        <button id="openSettingsBtn" type="button">Settings</button>
-        <button id="openServicesBtn" type="button">Services</button>
-        <button id="manageUsersBtn" type="button">User Management</button>
-        <button id="changePasswordBtn" type="button">Change Password</button>
-        <button id="logoutBtn" type="button">Logout</button>
-      </div>
-    </div>
-  </div>
-</header>
-
+      <!-- VIEWS -->
       <div id="appViews">
+        <!-- DASHBOARD -->
         <section class="view active" id="dashboardView">
-  <div class="fleetDashboard">
-    <div class="fleetDashboardHeader dashboardHero">
-  <div class="dashboardHeroContent">
-    <h1 id="dashboardGreeting">Good morning, Admin User!</h1>
-    <p class="sectionSubtitle">
-      Here’s what’s happening with your fleet today.
-    </p>
-  </div>
+          <div class="fleetDashboard">
+            <div class="fleetDashboardHeader dashboardHero">
+              <div class="dashboardHeroContent">
+                <h1 id="dashboardGreeting">Good morning, Admin User!</h1>
+                <p class="sectionSubtitle">
+                  Here’s what’s happening with your fleet today.
+                </p>
+              </div>
 
-  <div class="dashboardHeroArt" aria-hidden="true">
-    <img src="images/tanker-line-art.png" alt="" />
-  </div>
-</div>
+              <div class="dashboardHeroArt" aria-hidden="true">
+                <img src="images/tanker-line-art.png" alt="" />
+              </div>
+            </div>
 
-<div class="dashboardKpiRow dashboardHeroKpis">
-  <div class="dashboardKpiCard">
-    <div class="dashboardKpiIcon blue">🚚</div>
-    <div class="dashboardKpiContent">
-      <div id="dashKpiActiveUnits" class="dashboardKpiValue">0</div>
-      <div class="dashboardKpiLabel">Equipment</div>
-      <div class="dashboardKpiHint">Active Units</div>
-      <a href="#" data-view-link="equipmentView" class="dashboardKpiLink">View Equipment →</a>
-    </div>
-  </div>
+            <div class="dashboardKpiRow dashboardHeroKpis">
+              <div class="dashboardKpiCard">
+                <div class="dashboardKpiIcon blue">🚚</div>
+                <div class="dashboardKpiContent">
+                  <div id="dashKpiActiveUnits" class="dashboardKpiValue">0</div>
+                  <div class="dashboardKpiLabel">Equipment</div>
+                  <div class="dashboardKpiHint">Active Units</div>
+                  <a href="#" data-view-link="equipmentView" class="dashboardKpiLink">View Equipment →</a>
+                </div>
+              </div>
 
-  <div class="dashboardKpiCard">
-    <div class="dashboardKpiIcon gold">🔧</div>
-    <div class="dashboardKpiContent">
-      <div id="dashKpiOpenWorkOrders" class="dashboardKpiValue">0</div>
-      <div class="dashboardKpiLabel">Work Orders</div>
-      <div class="dashboardKpiHint">Open</div>
-      <a href="#" data-view-link="workOrdersView" class="dashboardKpiLink">View Work Orders →</a>
-    </div>
-  </div>
+              <div class="dashboardKpiCard">
+                <div class="dashboardKpiIcon gold">🔧</div>
+                <div class="dashboardKpiContent">
+                  <div id="dashKpiOpenWorkOrders" class="dashboardKpiValue">0</div>
+                  <div class="dashboardKpiLabel">Work Orders</div>
+                  <div class="dashboardKpiHint">Open</div>
+                  <a href="#" data-view-link="workOrdersView" class="dashboardKpiLink">View Work Orders →</a>
+                </div>
+              </div>
 
-  <div class="dashboardKpiCard">
-    <div class="dashboardKpiIcon red">📅</div>
-    <div class="dashboardKpiContent">
-      <div id="dashKpiDueServices" class="dashboardKpiValue">0</div>
-      <div class="dashboardKpiLabel">PM Services</div>
-      <div class="dashboardKpiHint">Due</div>
-      <a href="#" data-view-link="dashboardView" class="dashboardKpiLink">View Due Services →</a>
-    </div>
-  </div>
+              <div class="dashboardKpiCard">
+                <div class="dashboardKpiIcon red">📅</div>
+                <div class="dashboardKpiContent">
+                  <div id="dashKpiDueServices" class="dashboardKpiValue">0</div>
+                  <div class="dashboardKpiLabel">PM Services</div>
+                  <div class="dashboardKpiHint">Due</div>
+                  <a href="#" data-view-link="dashboardView" class="dashboardKpiLink">View Due Services →</a>
+                </div>
+              </div>
 
-  <div class="dashboardKpiCard">
-    <div class="dashboardKpiIcon purple">📦</div>
-    <div class="dashboardKpiContent">
-      <div id="dashKpiLowStockParts" class="dashboardKpiValue">0</div>
-      <div class="dashboardKpiLabel">Inventory Items</div>
-      <div class="dashboardKpiHint">Low Stock</div>
-      <a href="#" data-view-link="inventoryView" class="dashboardKpiLink">View Inventory →</a>
-    </div>
-  </div>
-</div>
+              <div class="dashboardKpiCard">
+                <div class="dashboardKpiIcon purple">📦</div>
+                <div class="dashboardKpiContent">
+                  <div id="dashKpiLowStockParts" class="dashboardKpiValue">0</div>
+                  <div class="dashboardKpiLabel">Inventory Items</div>
+                  <div class="dashboardKpiHint">Low Stock</div>
+                  <a href="#" data-view-link="inventoryView" class="dashboardKpiLink">View Inventory →</a>
+                </div>
+              </div>
+            </div>
 
-    <div class="dashboardGrid dashboardWidgetGrid" id="dashboardGrid">
-      <div
-        class="dashCard dashboardWidget widgetSpan8 dashboardPmCard"
-        data-widget-id="equipmentServices"
-        data-widget-span="8"
-        id="dashDueServicesSection"
-      >
-        <div class="dashboardWidgetHeader">
-          <div class="dashboardWidgetTitleRow">
-            <span class="dashboardDragHandle">⋮⋮</span>
-            <div>
-              <h3>Equipment Services / PM Compliance</h3>
-              <p class="dashboardWidgetSubtitle">Service reminders grouped by status and fleet type</p>
+            <div class="dashboardGrid dashboardWidgetGrid" id="dashboardGrid">
+              <div
+                class="dashCard dashboardWidget widgetSpan8 dashboardPmCard"
+                data-widget-id="equipmentServices"
+                data-widget-span="8"
+                id="dashDueServicesSection"
+              >
+                <div class="dashboardWidgetHeader">
+                  <div class="dashboardWidgetTitleRow">
+                    <span class="dashboardDragHandle">⋮⋮</span>
+                    <div>
+                      <h3>Equipment Services / PM Compliance</h3>
+                      <p class="dashboardWidgetSubtitle">Service reminders grouped by status and fleet type</p>
+                    </div>
+                  </div>
+
+                  <button type="button" class="dashboardWidgetMenuBtn" aria-label="Widget options">⋯</button>
+                </div>
+
+                <div class="dashboardChipRow">
+                  <div id="dashDueServicesTabs" class="dueServicesTabs dashboardStatusChips"></div>
+                </div>
+
+                <div class="dashboardChipRow">
+                  <div id="dashDueServicesCategories" class="dueServicesCategories dashboardFleetChips"></div>
+                </div>
+
+                <div class="dashboardTableWrap">
+                  <table class="dashboardPmTable">
+                    <thead>
+                      <tr>
+                        <th>Unit</th>
+                        <th>Service</th>
+                        <th>Status</th>
+                        <th>Last Done</th>
+                        <th>Owner</th>
+                      </tr>
+                    </thead>
+                    <tbody id="dashDueServicesList"></tbody>
+                  </table>
+                </div>
+
+                <div id="equipmentServicesList" style="display: none;"></div>
+              </div>
+
+              <div
+                class="dashCard dashboardWidget widgetSpan4 dashboardWeatherCard"
+                data-widget-id="weatherSummary"
+                data-widget-span="4"
+                id="dashWeatherSection"
+              >
+                <div class="dashboardWidgetHeader">
+                  <div class="dashboardWidgetTitleRow">
+                    <span class="dashboardDragHandle">⋮⋮</span>
+                    <h3>Weather</h3>
+                  </div>
+
+                  <button type="button" class="dashboardWidgetMenuBtn" aria-label="Widget options">⋯</button>
+                </div>
+
+                <div id="dashWeatherSummary" class="weatherSummaryCard">
+                  <div class="muted">Loading weather...</div>
+                </div>
+              </div>
+
+              <div class="dashCard dashboardWidget widgetSpan4" data-widget-id="vehicleStatus" data-widget-span="4">
+                <div class="dashboardWidgetHeader">
+                  <div class="dashboardWidgetTitleRow">
+                    <span class="dashboardDragHandle">⋮⋮</span>
+                    <h3>Vehicle Status</h3>
+                  </div>
+                  <button type="button" class="dashboardWidgetMenuBtn" aria-label="Widget options">⋯</button>
+                </div>
+
+                <div class="statList">
+                  <div class="statRow"><span>Active</span><span id="dashActiveCount" class="badge green">0</span></div>
+                  <div class="statRow"><span>Inactive</span><span id="dashInactiveCount" class="badge gray">0</span></div>
+                  <div class="statRow"><span>In Repair</span><span id="dashInRepairCount" class="badge gold">0</span></div>
+                </div>
+              </div>
+
+              <div class="dashCard dashboardWidget widgetSpan4" data-widget-id="openIssues" data-widget-span="4">
+                <div class="dashboardWidgetHeader">
+                  <div class="dashboardWidgetTitleRow">
+                    <span class="dashboardDragHandle">⋮⋮</span>
+                    <h3>Open Issues</h3>
+                  </div>
+                  <button type="button" class="dashboardWidgetMenuBtn" aria-label="Widget options">⋯</button>
+                </div>
+
+                <div id="dashOpenIssuesList" class="dashboardIssueList">
+                  <div class="dashboardIssueRow">
+                    <span><i class="dot red"></i>Open work orders</span>
+                    <strong id="dashOpenIssues">0</strong>
+                  </div>
+                  <div class="dashboardIssueRow">
+                    <span><i class="dot orange"></i>Over 7 days old</span>
+                    <strong id="dashOverdueIssues">0</strong>
+                  </div>
+                  <div class="dashboardIssueRow">
+                    <span><i class="dot blue"></i>Pending / In Progress</span>
+                    <strong id="dashPendingIssues">0</strong>
+                  </div>
+                </div>
+              </div>
+
+              <div class="dashCard dashboardWidget widgetSpan4" data-widget-id="activeWorkOrders" data-widget-span="4">
+                <div class="dashboardWidgetHeader">
+                  <div class="dashboardWidgetTitleRow">
+                    <span class="dashboardDragHandle">⋮⋮</span>
+                    <h3>Active Work Orders</h3>
+                  </div>
+                  <button type="button" class="dashboardWidgetMenuBtn" aria-label="Widget options">⋯</button>
+                </div>
+
+                <div class="statList">
+                  <div class="statRow"><span>Open</span><span id="dashWOOpen" class="badge green">0</span></div>
+                  <div class="statRow"><span>Pending / In Progress</span><span id="dashWOPending" class="badge gold">0</span></div>
+                  <div class="statRow"><span>Completed</span><span id="dashWOCompleted" class="badge blue">0</span></div>
+                </div>
+              </div>
+
+              <div class="dashCard dashboardWidget widgetSpan4" data-widget-id="recentActivity" data-widget-span="4">
+                <div class="dashboardWidgetHeader">
+                  <div class="dashboardWidgetTitleRow">
+                    <span class="dashboardDragHandle">⋮⋮</span>
+                    <h3>Recent Activity</h3>
+                  </div>
+                  <button type="button" class="dashboardWidgetMenuBtn" aria-label="Widget options">⋯</button>
+                </div>
+
+                <div id="dashRecentActivity" class="activityList dashboardActivityList"></div>
+              </div>
+
+              <div class="dashCard dashboardWidget widgetSpan4" data-widget-id="inventoryAlerts" data-widget-span="4">
+                <div class="dashboardWidgetHeader">
+                  <div class="dashboardWidgetTitleRow">
+                    <span class="dashboardDragHandle">⋮⋮</span>
+                    <h3>Inventory Alerts</h3>
+                  </div>
+                  <button type="button" class="dashboardWidgetMenuBtn" aria-label="Widget options">⋯</button>
+                </div>
+
+                <div id="dashInventoryAlerts" class="dashboardInventoryList"></div>
+              </div>
+
+              <div class="dashCard dashboardWidget widgetSpan8" data-widget-id="serviceCosts" data-widget-span="8">
+                <div class="dashboardWidgetHeader">
+                  <div class="dashboardWidgetTitleRow">
+                    <span class="dashboardDragHandle">⋮⋮</span>
+                    <div>
+                      <h3>Service Costs</h3>
+                      <p class="dashboardWidgetSubtitle">Work order cost trend</p>
+                    </div>
+                  </div>
+                  <button type="button" class="dashboardWidgetMenuBtn" aria-label="Widget options">⋯</button>
+                </div>
+
+                <div class="dashboardCostHeader">
+                  <div>
+                    <span class="chartLegendBox"></span>
+                    <span>Cost</span>
+                  </div>
+                  <strong id="dashYearServiceCost">$0.00</strong>
+                </div>
+
+                <div id="dashServiceCostChart" class="dashboardCostChart"></div>
+
+                <div class="costSummary dashboardCostSummary">
+                  <div class="costRow"><span>This Month</span><strong id="dashMonthServiceCost">$0.00</strong></div>
+                  <div class="costRow"><span>Work Orders</span><strong id="dashTotalWOCost">$0.00</strong></div>
+                  <div class="costRow"><span>Purchase Orders</span><strong id="dashTotalPOCost">$0.00</strong></div>
+                  <div class="costRow"><span>Combined</span><strong id="dashCombinedCost">$0.00</strong></div>
+                </div>
+              </div>
             </div>
           </div>
+        </section>
 
-          <button type="button" class="dashboardWidgetMenuBtn" aria-label="Widget options">⋯</button>
-        </div>
-
-        <div class="dashboardChipRow">
-          <div id="dashDueServicesTabs" class="dueServicesTabs dashboardStatusChips"></div>
-        </div>
-
-        <div class="dashboardChipRow">
-          <div id="dashDueServicesCategories" class="dueServicesCategories dashboardFleetChips"></div>
-        </div>
-
-        <div class="dashboardTableWrap">
-          <table class="dashboardPmTable">
-            <thead>
-              <tr>
-                <th>Unit</th>
-                <th>Service</th>
-                <th>Status</th>
-                <th>Last Done</th>
-                <th>Owner</th>
-              </tr>
-            </thead>
-            <tbody id="dashDueServicesList"></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div
-        class="dashCard dashboardWidget widgetSpan4 dashboardWeatherCard"
-        data-widget-id="weatherSummary"
-        data-widget-span="4"
-        id="dashWeatherSection"
-      >
-        <div class="dashboardWidgetHeader">
-          <div class="dashboardWidgetTitleRow">
-            <span class="dashboardDragHandle">⋮⋮</span>
-            <h3>Weather</h3>
-          </div>
-
-          <button type="button" class="dashboardWidgetMenuBtn" aria-label="Widget options">⋯</button>
-        </div>
-
-        <div id="dashWeatherSummary" class="weatherSummaryCard">
-          <div class="muted">Loading weather...</div>
-        </div>
-      </div>
-
-      <div
-        class="dashCard dashboardWidget widgetSpan4"
-        data-widget-id="vehicleStatus"
-        data-widget-span="4"
-      >
-        <div class="dashboardWidgetHeader">
-          <div class="dashboardWidgetTitleRow">
-            <span class="dashboardDragHandle">⋮⋮</span>
-            <h3>Vehicle Status</h3>
-          </div>
-
-          <button type="button" class="dashboardWidgetMenuBtn" aria-label="Widget options">⋯</button>
-        </div>
-
-        <div class="statList">
-          <div class="statRow">
-            <span>Active</span>
-            <span id="dashActiveCount" class="badge green">0</span>
-          </div>
-          <div class="statRow">
-            <span>Inactive</span>
-            <span id="dashInactiveCount" class="badge gray">0</span>
-          </div>
-          <div class="statRow">
-            <span>In Repair</span>
-            <span id="dashInRepairCount" class="badge gold">0</span>
-          </div>
-        </div>
-      </div>
-
-      <div
-        class="dashCard dashboardWidget widgetSpan4"
-        data-widget-id="openIssues"
-        data-widget-span="4"
-      >
-        <div class="dashboardWidgetHeader">
-          <div class="dashboardWidgetTitleRow">
-            <span class="dashboardDragHandle">⋮⋮</span>
-            <h3>Open Issues</h3>
-          </div>
-
-          <button type="button" class="dashboardWidgetMenuBtn" aria-label="Widget options">⋯</button>
-        </div>
-
-        <div id="dashOpenIssuesList" class="dashboardIssueList">
-          <div class="dashboardIssueRow">
-            <span><i class="dot red"></i>Open work orders</span>
-            <strong id="dashOpenIssues">0</strong>
-          </div>
-          <div class="dashboardIssueRow">
-            <span><i class="dot orange"></i>Over 7 days old</span>
-            <strong id="dashOverdueIssues">0</strong>
-          </div>
-          <div class="dashboardIssueRow">
-            <span><i class="dot blue"></i>Pending / In Progress</span>
-            <strong id="dashPendingIssues">0</strong>
-          </div>
-        </div>
-      </div>
-
-      <div
-        class="dashCard dashboardWidget widgetSpan4"
-        data-widget-id="activeWorkOrders"
-        data-widget-span="4"
-      >
-        <div class="dashboardWidgetHeader">
-          <div class="dashboardWidgetTitleRow">
-            <span class="dashboardDragHandle">⋮⋮</span>
-            <h3>Active Work Orders</h3>
-          </div>
-
-          <button type="button" class="dashboardWidgetMenuBtn" aria-label="Widget options">⋯</button>
-        </div>
-
-        <div class="statList">
-          <div class="statRow">
-            <span>Open</span>
-            <span id="dashWOOpen" class="badge green">0</span>
-          </div>
-          <div class="statRow">
-            <span>Pending / In Progress</span>
-            <span id="dashWOPending" class="badge gold">0</span>
-          </div>
-          <div class="statRow">
-            <span>Completed</span>
-            <span id="dashWOCompleted" class="badge blue">0</span>
-          </div>
-        </div>
-      </div>
-
-      <div
-        class="dashCard dashboardWidget widgetSpan4"
-        data-widget-id="recentActivity"
-        data-widget-span="4"
-      >
-        <div class="dashboardWidgetHeader">
-          <div class="dashboardWidgetTitleRow">
-            <span class="dashboardDragHandle">⋮⋮</span>
-            <h3>Recent Activity</h3>
-          </div>
-
-          <button type="button" class="dashboardWidgetMenuBtn" aria-label="Widget options">⋯</button>
-        </div>
-
-        <div id="dashRecentActivity" class="activityList dashboardActivityList"></div>
-      </div>
-
-      <div
-        class="dashCard dashboardWidget widgetSpan4"
-        data-widget-id="inventoryAlerts"
-        data-widget-span="4"
-      >
-        <div class="dashboardWidgetHeader">
-          <div class="dashboardWidgetTitleRow">
-            <span class="dashboardDragHandle">⋮⋮</span>
-            <h3>Inventory Alerts</h3>
-          </div>
-
-          <button type="button" class="dashboardWidgetMenuBtn" aria-label="Widget options">⋯</button>
-        </div>
-
-        <div id="dashInventoryAlerts" class="dashboardInventoryList"></div>
-      </div>
-
-      <div
-        class="dashCard dashboardWidget widgetSpan8"
-        data-widget-id="serviceCosts"
-        data-widget-span="8"
-      >
-        <div class="dashboardWidgetHeader">
-          <div class="dashboardWidgetTitleRow">
-            <span class="dashboardDragHandle">⋮⋮</span>
-            <div>
-              <h3>Service Costs</h3>
-              <p class="dashboardWidgetSubtitle">Work order cost trend</p>
-            </div>
-          </div>
-
-          <button type="button" class="dashboardWidgetMenuBtn" aria-label="Widget options">⋯</button>
-        </div>
-
-        <div class="dashboardCostHeader">
-          <div>
-            <span class="chartLegendBox"></span>
-            <span>Cost</span>
-          </div>
-          <strong id="dashYearServiceCost">$0.00</strong>
-        </div>
-
-        <div id="dashServiceCostChart" class="dashboardCostChart"></div>
-
-        <div class="costSummary dashboardCostSummary">
-          <div class="costRow">
-            <span>This Month</span>
-            <strong id="dashMonthServiceCost">$0.00</strong>
-          </div>
-          <div class="costRow">
-            <span>Work Orders</span>
-            <strong id="dashTotalWOCost">$0.00</strong>
-          </div>
-          <div class="costRow">
-            <span>Purchase Orders</span>
-            <strong id="dashTotalPOCost">$0.00</strong>
-          </div>
-          <div class="costRow">
-            <span>Combined</span>
-            <strong id="dashCombinedCost">$0.00</strong>
-          </div>
-        </div>
-      </div>
-    </div>
-  </div>
-</section>
-
+        <!-- EQUIPMENT -->
         <section class="view" id="equipmentView">
           <div id="equipmentListSection">
             <div class="header equipmentPageHeader">
@@ -413,13 +366,17 @@
 
                 <div class="equipmentOptionsMenu">
                   <button id="equipmentOptionsBtn" type="button">Equipment Options ▼</button>
+
                   <div id="equipmentOptionsDropdown" class="equipmentOptionsDropdown">
                     <button id="manageEquipmentColumnsBtn" type="button">Manage Columns</button>
                     <button id="clearEquipmentFiltersBtn" type="button">Clear Filters</button>
                     <button id="exportEquipmentBtn" type="button">Export</button>
                     <button id="importEquipmentBtn" type="button">Import</button>
+                    <button id="openDeletedEquipmentBtn" type="button">Deleted Equipment</button>
                   </div>
                 </div>
+
+                <input id="equipmentImportInput" type="file" accept=".csv,.xlsx,.xls" style="display: none;" />
               </div>
             </div>
 
@@ -442,208 +399,7 @@
           </div>
         </section>
 
-        <div id="equipmentProfileModal" class="appModal">
-  <div class="appModalCard inventoryProfileFullscreenCard">
-    <div class="appModalHeader">
-      <div>
-        <h2>Equipment Profile</h2>
-        <div class="muted">Unit <span id="profileUnit">—</span></div>
-      </div>
-
-      <div class="profileHeaderActions">
-        <button id="editProfileBtn" type="button" class="primaryBtn">Edit Equipment</button>
-        <button id="closeEquipmentProfileBtn" type="button" class="iconBtn">×</button>
-      </div>
-    </div>
-
-    <div class="appModalBody">
-      <div class="profileGrid">
-        <div class="fieldGroup"><label>Type</label><div id="profileType" class="profileValue">—</div></div>
-        <div class="fieldGroup"><label>Year</label><div id="profileYear" class="profileValue">—</div></div>
-        <div class="fieldGroup"><label>VIN</label><div id="profileVin" class="profileValue">—</div></div>
-        <div class="fieldGroup"><label>Plate</label><div id="profilePlate" class="profileValue">—</div></div>
-        <div class="fieldGroup"><label>State</label><div id="profileState" class="profileValue">—</div></div>
-        <div class="fieldGroup"><label>Status</label><div id="profileStatus" class="profileValue">—</div></div>
-        <div class="fieldGroup"><label>Location</label><div id="profileLocation" class="profileValue">—</div></div>
-        <div class="fieldGroup"><label>PM Template</label><div id="profilePM" class="profileValue">—</div></div>
-        <div class="fieldGroup"><label>Business</label><div id="profileBusiness" class="profileValue">—</div></div>
-        <div class="fieldGroup"><label>Rim</label><div id="profileRim" class="profileValue">—</div></div>
-        <div class="fieldGroup"><label>Size</label><div id="profileSize" class="profileValue">—</div></div>
-        <div class="fieldGroup"><label>Pressure</label><div id="profilePressure" class="profileValue">—</div></div>
-        <div class="fieldGroup"><label>Manufacturer</label><div id="profileManufacturer" class="profileValue">—</div></div>
-        <div class="fieldGroup"><label>Body Class</label><div id="profileBodyClass" class="profileValue">—</div></div>
-        <div class="fieldGroup"><label>Drive Type</label><div id="profileDriveType" class="profileValue">—</div></div>
-        <div class="fieldGroup"><label>Fuel Type</label><div id="profileFuelType" class="profileValue">—</div></div>
-        <div class="fieldGroup"><label>Engine</label><div id="profileEngine" class="profileValue">—</div></div>
-      </div>
-
-      <div class="profileSummaryRow">
-        <div class="dashCard">
-          <h3>Repair Summary</h3>
-          <div class="statRow"><span>Total Repairs</span><strong id="profileRepairCount">0</strong></div>
-          <div class="statRow"><span>Total Cost</span><strong id="profileRepairCost">0.00</strong></div>
-          <div class="statRow"><span>Filtered Repairs</span><strong id="filteredRepairCount">0</strong></div>
-          <div class="statRow"><span>Filtered Cost</span><strong id="filteredRepairCost">0.00</strong></div>
-        </div>
-      </div>
-
-      <div class="fieldGroup">
-        <h3>Service Tracking</h3>
-        <div class="gridWrap">
-          <table id="equipmentServicesTable" class="dataGrid">
-            <thead>
-              <tr>
-                <th>Location</th>
-                <th>Service</th>
-                <th>Template</th>
-                <th>Last Done</th>
-                <th>Meter</th>
-                <th>Status</th>
-                <th>Notes</th>
-                <th>Actions</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-
-      <div class="fieldGroup">
-        <h3>Work Order History</h3>
-        <div class="gridWrap">
-          <table id="equipmentHistoryTable" class="dataGrid">
-            <thead>
-              <tr>
-                <th>WO #</th>
-                <th>Date</th>
-                <th>Status</th>
-                <th>Notes</th>
-                <th>Total</th>
-              </tr>
-            </thead>
-            <tbody></tbody>
-          </table>
-        </div>
-      </div>
-    </div>
-  </div>
-</div>
-
-<div id="formPanel" class="sidePanel">
-  <div class="sidePanelCard">
-    <div class="sidePanelHeader">
-      <h2 id="formTitle">Add Equipment</h2>
-      <button id="closeBtn" type="button" class="iconBtn">×</button>
-    </div>
-
-    <div class="sidePanelBody">
-      <div class="fieldGroup">
-        <label for="unit">Unit</label>
-        <input id="unit" type="text" placeholder="Unit number" />
-      </div>
-
-      <div class="fieldGroup">
-        <label for="type">Type</label>
-        <input id="type" type="text" placeholder="Truck, Trailer, Chassis, O/O, etc." />
-      </div>
-
-      <div class="fieldGroup">
-        <label for="year">Year</label>
-        <input id="year" type="text" placeholder="Year" />
-      </div>
-
-      <div class="fieldGroup">
-        <label for="vin">VIN</label>
-        <input id="vin" type="text" placeholder="VIN" />
-      </div>
-
-      <div class="fieldGroup">
-        <label for="plate">Plate</label>
-        <input id="plate" type="text" placeholder="Plate" />
-      </div>
-
-      <div class="fieldGroup">
-        <label for="state">State/Prov</label>
-        <input id="state" type="text" placeholder="State/Prov" />
-      </div>
-
-      <div class="fieldGroup">
-        <label for="status">Status</label>
-        <select id="status">
-          <option value="">Select status</option>
-          <option value="Active">Active</option>
-          <option value="Inactive">Inactive</option>
-          <option value="In Repair">In Repair</option>
-          <option value="Out of Service">Out of Service</option>
-        </select>
-      </div>
-
-      <div class="fieldGroup">
-        <label for="location">Location</label>
-        <input id="location" type="text" placeholder="Location" />
-      </div>
-
-      <div class="fieldGroup">
-        <label for="pm">PM Template</label>
-        <input id="pm" type="text" placeholder="PM Template" />
-      </div>
-
-      <div class="fieldGroup">
-        <label for="business">Assigned Business</label>
-        <input id="business" type="text" placeholder="Assigned Business" />
-      </div>
-
-      <div class="fieldGroup">
-        <label for="rim">Rim</label>
-        <input id="rim" type="text" placeholder="Rim" />
-      </div>
-
-      <div class="fieldGroup">
-        <label for="size">Size</label>
-        <input id="size" type="text" placeholder="Size" />
-      </div>
-
-      <div class="fieldGroup">
-        <label for="pressure">Pressure</label>
-        <input id="pressure" type="text" placeholder="Pressure" />
-      </div>
-
-      <div class="fieldGroup">
-        <label for="manufacturer">Manufacturer</label>
-        <input id="manufacturer" type="text" placeholder="Manufacturer" />
-      </div>
-
-      <div class="fieldGroup">
-        <label for="bodyClass">Body Class</label>
-        <input id="bodyClass" type="text" placeholder="Body Class" />
-      </div>
-
-      <div class="fieldGroup">
-        <label for="driveType">Drive Type</label>
-        <input id="driveType" type="text" placeholder="Drive Type" />
-      </div>
-
-      <div class="fieldGroup">
-        <label for="fuelType">Fuel Type</label>
-        <input id="fuelType" type="text" placeholder="Fuel Type" />
-      </div>
-
-      <div class="fieldGroup">
-        <label for="engine">Engine</label>
-        <input id="engine" type="text" placeholder="Engine" />
-      </div>
-
-      <div class="formButtons"></div>
-    </div>
-
-    <div class="sidePanelFooter">
-      <button id="saveBtn" type="button" class="primaryBtn">Save</button>
-      <button id="updateBtn" type="button" class="primaryBtn" style="display: none;">Update</button>
-      <button id="deleteBtn" type="button" class="danger" style="display: none;">Delete</button>
-    </div>
-  </div>
-</div>
-
+        <!-- WORK ORDERS -->
         <section class="view" id="workOrdersView">
           <div class="header pageHeader">
             <div>
@@ -651,12 +407,14 @@
             </div>
 
             <div class="pageActions">
+              <button id="openWorkOrderBtn" type="button" style="display: none;">+ Add Work Order</button>
               <button id="openQuickWOFormBtn" type="button">+ Add Work Order</button>
               <button id="deleteSelectedWOBtn" class="primaryBtn" type="button">Delete Selected</button>
               <button id="cancelWOSelectionBtn" type="button" style="display: none;">Cancel Selection</button>
 
               <div class="equipmentOptionsMenu">
                 <button id="workOrdersOptionsBtn" type="button">Work Order Options ▼</button>
+
                 <div id="workOrdersOptionsDropdown" class="equipmentOptionsDropdown">
                   <button id="manageWOColumnsBtn" type="button">Manage Columns</button>
                   <button id="clearWOFiltersBtn" type="button">Clear Filters</button>
@@ -683,109 +441,101 @@
           <div id="woResultCount" class="resultCount">0 records</div>
         </section>
 
+        <!-- INVENTORY -->
         <section class="view" id="inventoryView">
-  <div class="header pageHeader">
-    <div>
-      <h1>Inventory</h1>
-    </div>
+          <div class="header pageHeader">
+            <div>
+              <h1>Inventory</h1>
+            </div>
 
-    <div class="pageActions">
-      <button id="openInventoryFormBtn" type="button">+ Add Inventory</button>
+            <div class="pageActions">
+              <button id="openInventoryFormBtn" type="button">+ Add Inventory</button>
+              <button id="deleteSelectedInventoryBtn" class="primaryBtn" type="button">Delete Selected</button>
 
-      <button id="deleteSelectedInventoryBtn" class="primaryBtn" type="button">
-        Delete Selected
-      </button>
+              <button id="previewInventoryBarcodesBtn" class="primaryBtn" type="button" style="display: none;">
+                Preview Barcodes
+              </button>
 
-      <button
-        id="previewInventoryBarcodesBtn"
-        class="primaryBtn"
-        type="button"
-        style="display: none;"
-      >
-        Preview Barcodes
-      </button>
+              <button id="cancelInventorySelectionBtn" type="button" style="display: none;">
+                Cancel Selection
+              </button>
 
-      <button
-        id="cancelInventorySelectionBtn"
-        type="button"
-        style="display: none;"
-      >
-        Cancel Selection
-      </button>
+              <div class="equipmentOptionsMenu">
+                <button id="inventoryOptionsBtn" type="button">Inventory Options ▼</button>
 
-      <div class="equipmentOptionsMenu">
-        <button id="inventoryOptionsBtn" type="button">
-          Inventory Options ▼
-        </button>
+                <div id="inventoryOptionsDropdown" class="equipmentOptionsDropdown">
+  <button id="manageInventoryColumnsBtn" type="button">Manage Columns</button>
 
-        <div id="inventoryOptionsDropdown" class="equipmentOptionsDropdown">
-          <button id="manageInventoryColumnsBtn" type="button">
-            Manage Columns
-          </button>
+  <button id="clearInventoryFiltersBtn" type="button">Clear Filters</button>
 
-          <button id="clearInventoryFiltersBtn" type="button">
-            Clear Filters
-          </button>
+  <button id="printInventoryBarcodesBtn" type="button">Print Barcodes</button>
 
-          <button id="printInventoryBarcodesBtn" type="button">
-            Print Barcodes
-          </button>
+  <button id="importInventoryBtn" type="button">Import</button>
 
-          <button id="exportInventoryBtn" type="button">
-            Export
-          </button>
+  <button id="exportInventoryBtn" type="button">Export</button>
+</div>
+              </div>
 
-          <button id="importInventoryBtn" type="button">
-            Import
-          </button>
-        </div>
-      </div>
+              <input
+                id="inventoryImportInput"
+                type="file"
+                accept=".csv,.xlsx,.xls"
+                style="display: none;"
+              />
+            </div>
+          </div>
 
-      <input
-        id="inventoryImportInput"
-        type="file"
-        accept=".csv,xlsx,xls"
-        style="display: none;"
-      />
-    </div>
-  </div>
+          <div class="gridSearchRow">
+            <input id="inventoryGlobalSearch" type="text" placeholder="Search inventory..." />
+          </div>
 
-  <div class="gridSearchRow">
-    <input
-      id="inventoryGlobalSearch"
-      type="text"
-      placeholder="Search inventory."
-    />
-  </div>
+          <div id="inventoryColumnFilters" class="columnFilters"></div>
 
-  <div id="inventoryColumnFilters" class="columnFilters"></div>
+          <div class="gridWrap">
+            <table id="inventoryTable" class="dataGrid">
+              <thead>
+                <tr id="inventoryTableHeaderRow"></tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
 
-  <div class="gridWrap">
-    <table id="inventoryTable" class="dataGrid">
-      <thead>
-        <tr id="inventoryTableHeaderRow"></tr>
-      </thead>
-      <tbody></tbody>
-    </table>
-  </div>
+          <div id="inventoryResultCount" class="resultCount">0 records</div>
+        </section>
 
-  <div id="inventoryResultCount" class="resultCount">0 records</div>
-</section>
-
+        <!-- VENDORS -->
         <section class="view" id="vendorsView">
           <div class="header pageHeader">
             <div>
               <h1>Vendors</h1>
             </div>
+
             <div class="pageActions">
               <button id="openVendorFormBtn" type="button">+ Add Vendor</button>
+              <button id="deleteSelectedVendorBtn" class="primaryBtn" type="button">Delete Selected</button>
+              <button id="cancelVendorSelectionBtn" type="button" style="display: none;">Cancel Selection</button>
+
+              <div class="equipmentOptionsMenu">
+                <button id="vendorsOptionsBtn" type="button">Vendor Options ▼</button>
+
+                <div id="vendorsOptionsDropdown" class="equipmentOptionsDropdown">
+                  <button id="manageVendorColumnsBtn" type="button">Manage Columns</button>
+                  <button id="clearVendorFiltersBtn" type="button">Clear Filters</button>
+                </div>
+              </div>
             </div>
           </div>
+
+          <div class="gridSearchRow">
+            <input id="vendorsGlobalSearch" type="text" placeholder="Search vendors..." />
+          </div>
+
+          <div id="vendorsColumnFilters" class="columnFilters"></div>
 
           <div class="gridWrap">
             <table id="vendorsTable" class="dataGrid">
               <thead>
-                <tr>
+                <tr id="vendorsTableHeaderRow">
                   <th>Name</th>
                   <th>Contact</th>
                   <th>Phone</th>
@@ -795,46 +545,75 @@
               <tbody></tbody>
             </table>
           </div>
+
+          <div id="vendorsResultCount" class="resultCount">0 records</div>
         </section>
 
-                <section class="view" id="purchaseOrdersView">
+        <!-- PURCHASE ORDERS -->
+        <section class="view" id="purchaseOrdersView">
           <div class="header pageHeader">
             <div>
               <h1>Purchase Orders</h1>
             </div>
 
             <div class="pageActions">
+              <button id="openPurchaseOrderBtn" type="button" style="display: none;">+ Add Purchase Order</button>
               <button id="openPOFormBtn" type="button">+ Add Purchase Order</button>
+              <button id="deleteSelectedPOBtn" class="primaryBtn" type="button">Delete Selected</button>
+              <button id="cancelPOSelectionBtn" type="button" style="display: none;">Cancel Selection</button>
+
+              <div class="equipmentOptionsMenu">
+                <button id="poOptionsBtn" type="button">Purchase Order Options ▼</button>
+
+                <div id="poOptionsDropdown" class="equipmentOptionsDropdown">
+                  <button id="managePOColumnsBtn" type="button">Manage Columns</button>
+                  <button id="clearPOFiltersBtn" type="button">Clear Filters</button>
+                </div>
+              </div>
             </div>
           </div>
 
           <div class="gridSearchRow">
-            <input id="poGlobalSearch" type="text" placeholder="Search purchase orders..." />
+            <input id="purchaseOrdersGlobalSearch" type="text" placeholder="Search purchase orders..." />
           </div>
 
+          <div id="purchaseOrdersColumnFilters" class="columnFilters"></div>
+
           <div class="gridWrap">
-            <table id="poTable" class="dataGrid">
+            <table id="purchaseOrdersTable" class="dataGrid">
               <thead>
-                <tr id="poTableHeaderRow"></tr>
+                <tr id="purchaseOrdersTableHeaderRow"></tr>
               </thead>
               <tbody></tbody>
             </table>
           </div>
 
-          <div id="poResultCount" class="resultCount">0 records</div>
+          <div id="purchaseOrdersResultCount" class="resultCount">0 records</div>
         </section>
 
+        <!-- DELETED EQUIPMENT -->
         <section class="view" id="deletedEquipmentView">
           <div class="header pageHeader">
             <div>
               <h1>Deleted Equipment</h1>
             </div>
+
+            <div class="pageActions">
+              <button id="restoreSelectedEquipmentBtn" type="button" class="primaryBtn">Restore Selected</button>
+              <button id="permanentlyDeleteSelectedBtn" type="button" class="danger">Permanently Delete</button>
+            </div>
           </div>
+
+          <div class="gridSearchRow">
+            <input id="deletedEquipmentGlobalSearch" type="text" placeholder="Search deleted equipment..." />
+          </div>
+
+          <div id="deletedEquipmentColumnFilters" class="columnFilters"></div>
 
           <div class="gridWrap">
             <table id="deletedEquipmentTable" class="dataGrid">
               <thead>
-                <tr>
+                <tr id="deletedEquipmentTableHeaderRow">
                   <th>Unit</th>
                   <th>Type</th>
                   <th>Location</th>
@@ -844,11 +623,413 @@
               <tbody></tbody>
             </table>
           </div>
+
+          <div id="deletedEquipmentResultCount" class="resultCount">0 records</div>
         </section>
       </div>
     </main>
   </div>
 
+  <!-- EQUIPMENT PROFILE MODAL -->
+  <div id="equipmentProfileModal" class="appModal">
+    <div class="appModalCard inventoryProfileFullscreenCard">
+      <div class="appModalHeader">
+        <div>
+          <h2>Equipment Profile</h2>
+          <div class="muted">Unit <span id="profileUnit">—</span></div>
+        </div>
+
+        <div class="profileHeaderActions">
+          <button id="editProfileBtn" type="button" class="primaryBtn">Edit Equipment</button>
+          <button id="cancelProfileEditBtn" type="button" style="display: none;">Cancel</button>
+          <button id="addProfileWOBtn" type="button">Add Work Order</button>
+          <button id="backToEquipmentListBtn" type="button" style="display: none;">Back</button>
+          <button id="closeEquipmentProfileBtn" type="button" class="iconBtn">×</button>
+        </div>
+      </div>
+
+      <div class="appModalBody">
+        <div class="profileGrid">
+          <div class="fieldGroup"><label>Type</label><div id="profileType" class="profileValue">—</div></div>
+          <div class="fieldGroup"><label>Year</label><div id="profileYear" class="profileValue">—</div></div>
+          <div class="fieldGroup"><label>VIN</label><div id="profileVin" class="profileValue">—</div></div>
+          <div class="fieldGroup"><label>Plate</label><div id="profilePlate" class="profileValue">—</div></div>
+          <div class="fieldGroup"><label>State</label><div id="profileState" class="profileValue">—</div></div>
+          <div class="fieldGroup"><label>Status</label><div id="profileStatus" class="profileValue">—</div></div>
+          <div class="fieldGroup"><label>Location</label><div id="profileLocation" class="profileValue">—</div></div>
+          <div class="fieldGroup"><label>PM Template</label><div id="profilePM" class="profileValue">—</div></div>
+          <div class="fieldGroup"><label>Business</label><div id="profileBusiness" class="profileValue">—</div></div>
+          <div class="fieldGroup"><label>Rim</label><div id="profileRim" class="profileValue">—</div></div>
+          <div class="fieldGroup"><label>Size</label><div id="profileSize" class="profileValue">—</div></div>
+          <div class="fieldGroup"><label>Pressure</label><div id="profilePressure" class="profileValue">—</div></div>
+          <div class="fieldGroup"><label>Manufacturer</label><div id="profileManufacturer" class="profileValue">—</div></div>
+          <div class="fieldGroup"><label>Body Class</label><div id="profileBodyClass" class="profileValue">—</div></div>
+          <div class="fieldGroup"><label>Drive Type</label><div id="profileDriveType" class="profileValue">—</div></div>
+          <div class="fieldGroup"><label>Fuel Type</label><div id="profileFuelType" class="profileValue">—</div></div>
+          <div class="fieldGroup"><label>Engine</label><div id="profileEngine" class="profileValue">—</div></div>
+        </div>
+
+        <div class="profileSummaryRow">
+          <div class="dashCard">
+            <h3>Repair Summary</h3>
+            <div class="statRow"><span>Total Repairs</span><strong id="profileRepairCount">0</strong></div>
+            <div class="statRow"><span>Total Cost</span><strong id="profileRepairCost">$0.00</strong></div>
+            <div class="statRow"><span>Filtered Repairs</span><strong id="filteredRepairCount">0</strong></div>
+            <div class="statRow"><span>Filtered Cost</span><strong id="filteredRepairCost">$0.00</strong></div>
+          </div>
+        </div>
+
+        <div class="fieldGroup">
+          <h3>Service Tracking</h3>
+          <div class="gridWrap">
+            <table id="equipmentServicesTable" class="dataGrid">
+              <thead>
+                <tr>
+                  <th>Location</th>
+                  <th>Service</th>
+                  <th>Template</th>
+                  <th>Last Done</th>
+                  <th>Meter</th>
+                  <th>Status</th>
+                  <th>Notes</th>
+                  <th>Actions</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="fieldGroup">
+          <h3>Work Order History</h3>
+
+          <div class="historyFilters">
+            <input id="historyStatusFilter" type="text" placeholder="Status" />
+            <input id="historyDateFrom" type="date" />
+            <input id="historyDateTo" type="date" />
+            <button id="applyHistoryFiltersBtn" type="button">Apply</button>
+            <button id="clearHistoryFiltersBtn" type="button">Clear</button>
+          </div>
+
+          <div class="gridWrap">
+            <table id="equipmentHistoryTable" class="dataGrid">
+              <thead>
+                <tr>
+                  <th>WO #</th>
+                  <th>Date</th>
+                  <th>Status</th>
+                  <th>Notes</th>
+                  <th>Total</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="fieldGroup">
+          <h3>Part Assignment History</h3>
+          <div class="gridWrap">
+            <table id="partAssignmentHistoryTable" class="dataGrid">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Part</th>
+                  <th>Qty</th>
+                  <th>Reference</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <!-- EQUIPMENT FORM PANEL -->
+  <div id="formPanel" class="sidePanel">
+    <div class="sidePanelCard">
+      <div class="sidePanelHeader">
+        <h2 id="formTitle">Add Equipment</h2>
+        <button id="closeBtn" type="button" class="iconBtn">×</button>
+      </div>
+
+      <div class="sidePanelBody">
+        <div class="fieldGroup"><label for="unit">Unit</label><input id="unit" type="text" placeholder="Unit number" /></div>
+        <div class="fieldGroup"><label for="type">Type</label><input id="type" type="text" placeholder="Truck, Trailer, Chassis, O/O, etc." /></div>
+        <div class="fieldGroup"><label for="year">Year</label><input id="year" type="text" placeholder="Year" /></div>
+        <div class="fieldGroup"><label for="vin">VIN</label><input id="vin" type="text" placeholder="VIN" /></div>
+        <div class="fieldGroup"><label for="plate">Plate</label><input id="plate" type="text" placeholder="Plate" /></div>
+        <div class="fieldGroup"><label for="state">State/Prov</label><input id="state" type="text" placeholder="State/Prov" /></div>
+
+        <div class="fieldGroup">
+          <label for="status">Status</label>
+          <select id="status">
+            <option value="">Select status</option>
+            <option value="Active">Active</option>
+            <option value="Inactive">Inactive</option>
+            <option value="In Repair">In Repair</option>
+            <option value="Out of Service">Out of Service</option>
+          </select>
+        </div>
+
+        <div class="fieldGroup"><label for="location">Location</label><input id="location" type="text" placeholder="Location" /></div>
+        <div class="fieldGroup"><label for="pm">PM Template</label><input id="pm" type="text" placeholder="PM Template" /></div>
+        <div class="fieldGroup"><label for="business">Assigned Business</label><input id="business" type="text" placeholder="Assigned Business" /></div>
+        <div class="fieldGroup"><label for="rim">Rim</label><input id="rim" type="text" placeholder="Rim" /></div>
+        <div class="fieldGroup"><label for="size">Size</label><input id="size" type="text" placeholder="Size" /></div>
+        <div class="fieldGroup"><label for="pressure">Pressure</label><input id="pressure" type="text" placeholder="Pressure" /></div>
+        <div class="fieldGroup"><label for="manufacturer">Manufacturer</label><input id="manufacturer" type="text" placeholder="Manufacturer" /></div>
+        <div class="fieldGroup"><label for="bodyClass">Body Class</label><input id="bodyClass" type="text" placeholder="Body Class" /></div>
+        <div class="fieldGroup"><label for="driveType">Drive Type</label><input id="driveType" type="text" placeholder="Drive Type" /></div>
+        <div class="fieldGroup"><label for="fuelType">Fuel Type</label><input id="fuelType" type="text" placeholder="Fuel Type" /></div>
+        <div class="fieldGroup"><label for="engine">Engine</label><input id="engine" type="text" placeholder="Engine" /></div>
+
+        <div class="formButtons"></div>
+      </div>
+
+      <div class="sidePanelFooter">
+        <button id="saveBtn" type="button" class="primaryBtn">Save</button>
+        <button id="updateBtn" type="button" class="primaryBtn" style="display: none;">Update</button>
+        <button id="deleteBtn" type="button" class="danger" style="display: none;">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- INVENTORY FORM PANEL -->
+  <div id="inventoryFormPanel" class="sidePanel">
+    <div class="sidePanelCard">
+      <div class="sidePanelHeader">
+        <h2 id="inventoryFormTitle">Inventory Item</h2>
+        <button id="closeInventoryBtn" type="button" class="iconBtn">×</button>
+      </div>
+
+      <div class="sidePanelBody">
+        <div class="fieldGroup"><label for="invName">Part Name</label><input id="invName" type="text" /></div>
+        <div class="fieldGroup"><label for="invPartNumber">Part #</label><input id="invPartNumber" type="text" /></div>
+        <div class="fieldGroup"><label for="invCategory">Category</label><input id="invCategory" type="text" /></div>
+        <div class="fieldGroup"><label for="invQuantity">Quantity</label><input id="invQuantity" type="number" min="0" step="1" /></div>
+        <div class="fieldGroup"><label for="invUnitCost">Unit Cost</label><input id="invUnitCost" type="number" min="0" step="0.01" /></div>
+        <div class="fieldGroup"><label for="invLocation">Location</label><input id="invLocation" type="text" /></div>
+        <div class="fieldGroup"><label for="invVendor">Vendor</label><input id="invVendor" type="text" /></div>
+        <div class="fieldGroup"><label for="invReorderPoint">Reorder Point</label><input id="invReorderPoint" type="number" min="0" step="1" /></div>
+        <div class="fieldGroup"><label for="invReorderQty">Reorder Quantity</label><input id="invReorderQty" type="number" min="0" step="1" /></div>
+        <div class="fieldGroup"><label for="invMaxQty">Maximum Quantity</label><input id="invMaxQty" type="number" min="0" step="1" /></div>
+        <div class="fieldGroup"><label for="invBinLocation">Bin / Shelf</label><input id="invBinLocation" type="text" /></div>
+        <div class="fieldGroup"><label for="invManufacturer">Manufacturer</label><input id="invManufacturer" type="text" /></div>
+        <div class="fieldGroup"><label for="invPartType">Part Type</label><input id="invPartType" type="text" /></div>
+        <div class="fieldGroup"><label for="invUom">UOM</label><input id="invUom" type="text" placeholder="EA" /></div>
+        <div class="fieldGroup"><label for="invNotes">Notes</label><textarea id="invNotes" rows="3"></textarea></div>
+        <div class="fieldGroup"><label for="invProfileNotes">Profile Notes</label><textarea id="invProfileNotes" rows="4"></textarea></div>
+      </div>
+
+      <div class="sidePanelFooter">
+        <button id="saveInventoryBtn" type="button" class="primaryBtn">Save</button>
+        <button id="updateInventoryBtn" type="button" class="primaryBtn" style="display: none;">Update</button>
+        <button id="deleteInventoryBtn" type="button" class="danger" style="display: none;">Delete</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- INVENTORY PROFILE MODAL -->
+  <div id="inventoryProfilePanel" class="appModal">
+    <div class="appModalCard inventoryProfileFullscreenCard">
+      <div class="appModalHeader">
+        <div>
+          <h2 id="inventoryProfileTitle">Inventory Profile</h2>
+          <div id="inventoryProfileSubtitle" class="muted"></div>
+        </div>
+
+        <button id="closeInventoryProfileBtn" type="button" class="iconBtn">×</button>
+      </div>
+
+      <div class="appModalBody">
+        <div class="profileGrid">
+          <div class="fieldGroup"><label>Part Name</label><div id="profileInvName" class="profileValue"></div></div>
+          <div class="fieldGroup"><label>Part #</label><div id="profileInvPartNumber" class="profileValue"></div></div>
+          <div class="fieldGroup"><label>Category</label><div id="profileInvCategory" class="profileValue"></div></div>
+          <div class="fieldGroup"><label>Location</label><div id="profileInvLocation" class="profileValue"></div></div>
+          <div class="fieldGroup"><label>Vendor</label><div id="profileInvVendor" class="profileValue"></div></div>
+          <div class="fieldGroup"><label>Quantity</label><div id="profileInvQuantity" class="profileValue"></div></div>
+          <div class="fieldGroup"><label>Unit Cost</label><div id="profileInvUnitCost" class="profileValue"></div></div>
+          <div class="fieldGroup"><label>Reorder Point</label><div id="profileInvReorderPoint" class="profileValue"></div></div>
+          <div class="fieldGroup"><label>Reorder Qty</label><div id="profileInvReorderQty" class="profileValue"></div></div>
+          <div class="fieldGroup"><label>Maximum Qty</label><div id="profileInvMaxQty" class="profileValue"></div></div>
+          <div class="fieldGroup"><label>Bin / Shelf</label><div id="profileInvBinLocation" class="profileValue"></div></div>
+          <div class="fieldGroup"><label>Manufacturer</label><div id="profileInvManufacturer" class="profileValue"></div></div>
+          <div class="fieldGroup"><label>Part Type</label><div id="profileInvPartType" class="profileValue"></div></div>
+          <div class="fieldGroup"><label>UOM</label><div id="profileInvUom" class="profileValue"></div></div>
+          <div class="fieldGroup"><label>Last Purchased</label><div id="profileInvLastPurchased" class="profileValue"></div></div>
+          <div class="fieldGroup"><label>Last Issued</label><div id="profileInvLastIssued" class="profileValue"></div></div>
+        </div>
+
+        <div class="fieldGroup">
+          <label>Notes</label>
+          <div id="profileInvNotes" class="profileValue multilineValue"></div>
+        </div>
+
+        <div class="fieldGroup">
+          <label>Profile Notes</label>
+          <div id="profileInvProfileNotes" class="profileValue multilineValue"></div>
+        </div>
+
+        <div id="inventoryAdminQuickAdjustSection" class="inventoryAdminSection" style="display: none;">
+          <h3>Admin Quick Quantity Adjustment</h3>
+
+          <div class="profileGrid">
+            <div class="fieldGroup">
+              <label for="inventoryAdjustType">Adjustment Type</label>
+              <select id="inventoryAdjustType">
+                <option value="set">Set Quantity</option>
+                <option value="add">Add Quantity</option>
+                <option value="subtract">Subtract Quantity</option>
+              </select>
+            </div>
+
+            <div class="fieldGroup">
+              <label for="inventoryAdjustQty">Quantity</label>
+              <input id="inventoryAdjustQty" type="number" step="1" min="0" />
+            </div>
+
+            <div class="fieldGroup">
+              <label for="inventoryAdjustReason">Reason</label>
+              <input id="inventoryAdjustReason" type="text" placeholder="Reason / notes" />
+            </div>
+          </div>
+
+          <div class="appModalFooter inventoryInlineFooter">
+            <button id="saveInventoryAdjustmentBtn" type="button" class="primaryBtn">Save Adjustment</button>
+          </div>
+        </div>
+
+        <div class="fieldGroup">
+          <h3>Recent Purchase History</h3>
+          <div class="gridWrap">
+            <table id="inventoryPurchaseHistoryTable" class="dataGrid">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Qty</th>
+                  <th>Unit Cost</th>
+                  <th>Vendor</th>
+                  <th>Reference</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div class="fieldGroup">
+          <h3>Recent Issue History</h3>
+          <div class="gridWrap">
+            <table id="inventoryIssueHistoryTable" class="dataGrid">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Qty</th>
+                  <th>User</th>
+                  <th>Reference</th>
+                  <th>Type</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+
+        <div id="inventoryAdjustmentHistorySection" class="fieldGroup" style="display: none;">
+          <h3>Adjustment History</h3>
+          <div class="gridWrap">
+            <table id="inventoryAdjustmentHistoryTable" class="dataGrid">
+              <thead>
+                <tr>
+                  <th>Date</th>
+                  <th>Type</th>
+                  <th>Previous</th>
+                  <th>New</th>
+                  <th>User</th>
+                  <th>Notes</th>
+                </tr>
+              </thead>
+              <tbody></tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <div class="appModalFooter">
+        <button id="editInventoryProfileBtn" type="button" class="primaryBtn">Edit Part</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- INVENTORY BARCODE MODAL -->
+  <div id="inventoryBarcodeModal" class="appModal">
+    <div class="appModalCard barcodePreviewModalCard">
+      <div class="appModalHeader">
+        <div>
+          <h2>Inventory Barcode Preview</h2>
+          <p class="muted">
+            Preview selected inventory labels before printing to your Zebra printer.
+          </p>
+        </div>
+
+        <button
+          id="closeInventoryBarcodeModalBtn"
+          type="button"
+          class="iconBtn"
+          aria-label="Close barcode preview"
+        >
+          ×
+        </button>
+      </div>
+
+      <div class="appModalBody">
+        <div class="barcodePrintControls">
+          <div class="fieldGroup">
+            <label for="inventoryBarcodeCopiesInput">Copies per item</label>
+            <input id="inventoryBarcodeCopiesInput" type="number" min="1" value="1" />
+          </div>
+
+          <div class="fieldGroup">
+            <label for="inventoryBarcodeLabelSize">Label size</label>
+            <select id="inventoryBarcodeLabelSize">
+              <option value="2x1">2&quot; x 1&quot;</option>
+              <option value="3x1">3&quot; x 1&quot;</option>
+              <option value="4x2">4&quot; x 2&quot;</option>
+            </select>
+          </div>
+
+          <div class="fieldGroup">
+            <label for="inventoryBarcodeType">Barcode type</label>
+            <select id="inventoryBarcodeType">
+              <option value="CODE128">CODE128</option>
+            </select>
+          </div>
+
+          <button id="refreshInventoryBarcodePreviewBtn" type="button">Refresh Preview</button>
+
+          <button id="printInventoryBarcodePreviewBtn" type="button" class="primaryBtn">
+            Print to Zebra
+          </button>
+        </div>
+
+        <div class="barcodePreviewHelp">
+          <strong>Label contents:</strong>
+          Part name, part number, location, price, and scannable barcode.
+        </div>
+
+        <div id="inventoryBarcodePreview" class="barcodePreviewSheet"></div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SETTINGS PANEL -->
   <div id="settingsPanel" class="sidePanel">
     <div class="sidePanelCard">
       <div class="sidePanelHeader">
@@ -880,6 +1061,12 @@
           <label for="weatherZipInput">Weather Zip Code</label>
           <input id="weatherZipInput" type="text" maxlength="10" placeholder="62201" />
         </div>
+
+        <div class="settingsQuickActions">
+          <button id="settingsServicesBtn" type="button">Services</button>
+          <button id="settingsUsersBtn" type="button">Users</button>
+          <button id="settingsPasswordBtn" type="button">Change Password</button>
+        </div>
       </div>
 
       <div class="sidePanelFooter">
@@ -888,292 +1075,104 @@
     </div>
   </div>
 
-  <div id="inventoryFormPanel" class="sidePanel">
+  <!-- SERVICES PANEL -->
+  <div id="servicesPanel" class="sidePanel">
     <div class="sidePanelCard">
       <div class="sidePanelHeader">
-        <h2 id="inventoryFormTitle">Inventory Item</h2>
-        <button id="closeInventoryBtn" type="button" class="iconBtn">×</button>
+        <h2>Services</h2>
+        <button id="closeServicesBtn" type="button" class="iconBtn">×</button>
       </div>
 
       <div class="sidePanelBody">
-        <div class="fieldGroup">
-          <label for="invName">Part Name</label>
-          <input id="invName" type="text" />
-        </div>
-
-        <div class="fieldGroup">
-          <label for="invPartNumber">Part #</label>
-          <input id="invPartNumber" type="text" />
-        </div>
-
-        <div class="fieldGroup">
-          <label for="invCategory">Category</label>
-          <input id="invCategory" type="text" />
-        </div>
-
-        <div class="fieldGroup">
-          <label for="invQuantity">Quantity</label>
-          <input id="invQuantity" type="number" min="0" step="1" />
-        </div>
-
-        <div class="fieldGroup">
-          <label for="invUnitCost">Unit Cost</label>
-          <input id="invUnitCost" type="number" min="0" step="0.01" />
-        </div>
-
-        <div class="fieldGroup">
-          <label for="invLocation">Location</label>
-          <input id="invLocation" type="text" />
-        </div>
-
-        <div class="fieldGroup">
-          <label for="invVendor">Vendor</label>
-          <input id="invVendor" type="text" />
-        </div>
-
-        <div class="fieldGroup">
-          <label for="invReorderPoint">Reorder Point</label>
-          <input id="invReorderPoint" type="number" min="0" step="1" />
-        </div>
-
-        <div class="fieldGroup">
-          <label for="invReorderQty">Reorder Quantity</label>
-          <input id="invReorderQty" type="number" min="0" step="1" />
-        </div>
-
-        <div class="fieldGroup">
-          <label for="invMaxQty">Maximum Quantity</label>
-          <input id="invMaxQty" type="number" min="0" step="1" />
-        </div>
-
-        <div class="fieldGroup">
-          <label for="invBinLocation">Bin / Shelf</label>
-          <input id="invBinLocation" type="text" />
-        </div>
-
-        <div class="fieldGroup">
-          <label for="invManufacturer">Manufacturer</label>
-          <input id="invManufacturer" type="text" />
-        </div>
-
-        <div class="fieldGroup">
-          <label for="invPartType">Part Type</label>
-          <input id="invPartType" type="text" />
-        </div>
-
-        <div class="fieldGroup">
-          <label for="invUom">UOM</label>
-          <input id="invUom" type="text" placeholder="EA" />
-        </div>
-
-        <div class="fieldGroup">
-          <label for="invNotes">Notes</label>
-          <textarea id="invNotes" rows="3"></textarea>
-        </div>
-
-        <div class="fieldGroup">
-          <label for="invProfileNotes">Profile Notes</label>
-          <textarea id="invProfileNotes" rows="4"></textarea>
-        </div>
-      </div>
-
-      <div class="sidePanelFooter">
-        <button id="saveInventoryBtn" type="button" class="primaryBtn">Save</button>
-        <button id="updateInventoryBtn" type="button" class="primaryBtn" style="display: none;">Update</button>
-        <button id="deleteInventoryBtn" type="button" style="display: none;">Delete</button>
+        <p class="muted">Manage service templates and PM rules.</p>
       </div>
     </div>
   </div>
 
-  <div id="inventoryProfilePanel" class="appModal">
-    <div class="appModalCard inventoryProfileFullscreenCard">
+  <!-- VENDOR FORM PANEL -->
+  <div id="vendorFormPanel" class="sidePanel">
+    <div class="sidePanelCard">
+      <div class="sidePanelHeader">
+        <h2>Vendor</h2>
+        <button id="closeVendorBtn" type="button" class="iconBtn">×</button>
+      </div>
+
+      <div class="sidePanelBody">
+        <div class="fieldGroup"><label>Vendor Name</label><input id="vendorName" type="text" /></div>
+        <div class="fieldGroup"><label>Contact</label><input id="vendorContact" type="text" /></div>
+        <div class="fieldGroup"><label>Phone</label><input id="vendorPhone" type="text" /></div>
+        <div class="fieldGroup"><label>Email</label><input id="vendorEmail" type="email" /></div>
+      </div>
+
+      <div class="sidePanelFooter">
+        <button id="saveVendorBtn" type="button" class="primaryBtn">Save Vendor</button>
+      </div>
+    </div>
+  </div>
+
+  <!-- WORK ORDER FORM PANEL PLACEHOLDER -->
+  <div id="workOrderFormPanel" class="sidePanel">
+    <div class="sidePanelCard">
+      <div class="sidePanelHeader">
+        <h2>Work Order</h2>
+        <button id="closeWorkOrderPanelBtn" type="button" class="iconBtn">×</button>
+      </div>
+
+      <div class="sidePanelBody">
+        <p class="muted">Work orders open in the work order window.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- PURCHASE ORDER FORM PANEL PLACEHOLDER -->
+  <div id="poFormPanel" class="sidePanel">
+    <div class="sidePanelCard">
+      <div class="sidePanelHeader">
+        <h2>Purchase Order</h2>
+        <button id="closePOPanelBtn" type="button" class="iconBtn">×</button>
+      </div>
+
+      <div class="sidePanelBody">
+        <p class="muted">Purchase orders open in the purchase order window.</p>
+      </div>
+    </div>
+  </div>
+
+  <!-- SERVICE TRACKING MODAL -->
+  <div id="serviceTrackingModal" class="appModal">
+    <div class="appModalCard">
       <div class="appModalHeader">
-        <div>
-          <h2 id="inventoryProfileTitle">Inventory Profile</h2>
-          <div id="inventoryProfileSubtitle" class="muted"></div>
-        </div>
-        <button id="closeInventoryProfileBtn" type="button" class="iconBtn">×</button>
+        <h3>Update Service</h3>
+        <button id="serviceTrackingCloseBtn" type="button" class="iconBtn">×</button>
       </div>
 
       <div class="appModalBody">
-        <div class="fieldGroup">
-          <label>Part Name</label>
-          <div id="profileInvName" class="profileValue"></div>
-        </div>
+        <p id="serviceTrackingTaskName" class="muted"></p>
 
         <div class="fieldGroup">
-          <label>Part #</label>
-          <div id="profileInvPartNumber" class="profileValue"></div>
+          <label for="serviceTrackingLastDateInput">Last Done Date</label>
+          <input id="serviceTrackingLastDateInput" type="date" />
         </div>
 
         <div class="fieldGroup">
-          <label>Category</label>
-          <div id="profileInvCategory" class="profileValue"></div>
+          <label for="serviceTrackingLastMilesInput">Last Miles / Meter</label>
+          <input id="serviceTrackingLastMilesInput" type="number" min="0" step="1" />
         </div>
 
         <div class="fieldGroup">
-          <label>Location</label>
-          <div id="profileInvLocation" class="profileValue"></div>
-        </div>
-
-        <div class="fieldGroup">
-          <label>Vendor</label>
-          <div id="profileInvVendor" class="profileValue"></div>
-        </div>
-
-        <div class="fieldGroup">
-          <label>On Hand</label>
-          <div id="profileInvQuantity" class="profileValue"></div>
-        </div>
-
-        <div class="fieldGroup">
-          <label>Unit Cost</label>
-          <div id="profileInvUnitCost" class="profileValue"></div>
-        </div>
-
-        <div class="fieldGroup">
-          <label>Reorder Point</label>
-          <div id="profileInvReorderPoint" class="profileValue"></div>
-        </div>
-
-        <div class="fieldGroup">
-          <label>Reorder Quantity</label>
-          <div id="profileInvReorderQty" class="profileValue"></div>
-        </div>
-
-        <div class="fieldGroup">
-          <label>Maximum Quantity</label>
-          <div id="profileInvMaxQty" class="profileValue"></div>
-        </div>
-
-        <div class="fieldGroup">
-          <label>Bin / Shelf</label>
-          <div id="profileInvBinLocation" class="profileValue"></div>
-        </div>
-
-        <div class="fieldGroup">
-          <label>Manufacturer</label>
-          <div id="profileInvManufacturer" class="profileValue"></div>
-        </div>
-
-        <div class="fieldGroup">
-          <label>Part Type</label>
-          <div id="profileInvPartType" class="profileValue"></div>
-        </div>
-
-        <div class="fieldGroup">
-          <label>UOM</label>
-          <div id="profileInvUom" class="profileValue"></div>
-        </div>
-
-        <div class="fieldGroup">
-          <label>Last Purchased</label>
-          <div id="profileInvLastPurchased" class="profileValue"></div>
-        </div>
-
-        <div class="fieldGroup">
-          <label>Last Issued</label>
-          <div id="profileInvLastIssued" class="profileValue"></div>
-        </div>
-
-        <div class="fieldGroup">
-          <label>Notes</label>
-          <div id="profileInvNotes" class="profileValue multilineValue"></div>
-        </div>
-
-        <div class="fieldGroup">
-          <label>Profile Notes</label>
-          <div id="profileInvProfileNotes" class="profileValue multilineValue"></div>
-        </div>
-
-        <div id="inventoryAdminQuickAdjustSection" class="inventoryAdminSection" style="display: none;">
-          <h3>Quick Quantity Adjustment</h3>
-
-          <div class="fieldGroup">
-            <label for="inventoryAdjustType">Adjustment Type</label>
-            <select id="inventoryAdjustType">
-              <option value="set">Set Quantity</option>
-              <option value="add">Add Quantity</option>
-              <option value="subtract">Subtract Quantity</option>
-            </select>
-          </div>
-
-          <div class="fieldGroup">
-            <label for="inventoryAdjustQty">Quantity</label>
-            <input id="inventoryAdjustQty" type="number" step="1" />
-          </div>
-
-          <div class="fieldGroup">
-            <label for="inventoryAdjustReason">Reason / Notes</label>
-            <textarea id="inventoryAdjustReason" rows="3"></textarea>
-          </div>
-
-          <div class="appModalFooter inventoryInlineFooter">
-            <button id="saveInventoryAdjustmentBtn" type="button" class="primaryBtn">Save Adjustment</button>
-          </div>
-        </div>
-
-        <div class="fieldGroup">
-          <h3>Recent Purchase History</h3>
-          <div class="gridWrap">
-            <table id="inventoryPurchaseHistoryTable" class="dataGrid">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Qty</th>
-                  <th>Unit Cost</th>
-                  <th>Vendor</th>
-                  <th>Reference</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </div>
-
-        <div class="fieldGroup">
-          <h3>Recent Issue History</h3>
-          <div class="gridWrap">
-            <table id="inventoryIssueHistoryTable" class="dataGrid">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Qty</th>
-                  <th>User</th>
-                  <th>Reference</th>
-                  <th>Notes</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
-        </div>
-
-        <div id="inventoryAdjustmentHistorySection" class="fieldGroup" style="display: none;">
-          <h3>Adjustment History</h3>
-          <div class="gridWrap">
-            <table id="inventoryAdjustmentHistoryTable" class="dataGrid">
-              <thead>
-                <tr>
-                  <th>Date</th>
-                  <th>Previous</th>
-                  <th>New</th>
-                  <th>User</th>
-                  <th>Notes</th>
-                </tr>
-              </thead>
-              <tbody></tbody>
-            </table>
-          </div>
+          <label for="serviceTrackingNotesInput">Notes</label>
+          <textarea id="serviceTrackingNotesInput" rows="3"></textarea>
         </div>
       </div>
 
       <div class="appModalFooter">
-        <button id="editInventoryProfileBtn" type="button" class="primaryBtn">Edit Part</button>
+        <button id="serviceTrackingCancelBtn" type="button">Cancel</button>
+        <button id="serviceTrackingSaveBtn" type="button" class="primaryBtn">Save</button>
       </div>
     </div>
   </div>
 
+  <!-- PASSWORD MODAL -->
   <div id="passwordModal" class="appModal">
     <div class="appModalCard">
       <div class="appModalHeader">
@@ -1204,6 +1203,21 @@
     </div>
   </div>
 
+  <!-- USERS MODAL / FRAME -->
+  <div id="usersModal" class="appModal">
+    <div class="appModalCard">
+      <div class="appModalHeader">
+        <h3>User Management</h3>
+        <button id="closeUsersModalBtn" type="button" class="iconBtn">×</button>
+      </div>
+
+      <div class="appModalBody">
+        <iframe id="usersFrame" title="User Management" style="width: 100%; height: 70vh; border: 0;"></iframe>
+      </div>
+    </div>
+  </div>
+
+  <!-- COLUMN MANAGER -->
   <div id="columnManagerPanel" class="appModal">
     <div class="appModalCard columnManagerCard">
       <div class="appModalHeader">
@@ -1222,6 +1236,7 @@
     </div>
   </div>
 
+  <!-- DASHBOARD EDITOR -->
   <div id="dashboardEditorModal" class="appModal">
     <div class="appModalCard dashboardEditorCard">
       <div class="appModalHeader">
@@ -1240,6 +1255,7 @@
     </div>
   </div>
 
+  <!-- GLOBAL APP MODAL -->
   <div id="appModal" class="appModal">
     <div class="appModalCard" role="dialog" aria-modal="true" aria-labelledby="appModalTitle">
       <div class="appModalHeader">
@@ -1258,106 +1274,35 @@
     </div>
   </div>
 
+  <!-- VIEW LINK SHORTCUTS -->
   <script>
-  document.addEventListener("click", event => {
-    const link = event.target.closest("[data-view-link]");
-    if (!link) return;
+    document.addEventListener("click", event => {
+      const link = event.target.closest("[data-view-link]");
+      if (!link) return;
 
-    event.preventDefault();
+      event.preventDefault();
 
-    const targetView = link.dataset.viewLink;
-    const navLink = document.querySelector(`#sidebar a[data-view="${targetView}"]`);
+      const targetView = link.dataset.viewLink;
+      const navLink = document.querySelector(`#sidebar a[data-view="${targetView}"]`);
 
-    if (navLink) {
-      navLink.click();
-    }
-  });
+      if (navLink) {
+        navLink.click();
+      }
+    });
 
-  document.addEventListener("click", event => {
-    const shortcut = event.target.closest("#sidebarSettingsShortcut");
-    if (!shortcut) return;
+    document.addEventListener("click", event => {
+      const shortcut = event.target.closest("#sidebarSettingsShortcut");
+      if (!shortcut) return;
 
-    event.preventDefault();
+      event.preventDefault();
 
-    const settingsButton = document.getElementById("settingsMenuBtn");
-    if (settingsButton) {
-      settingsButton.click();
-    }
-  });
-</script>
+      const settingsButton = document.getElementById("settingsMenuBtn");
+      if (settingsButton) {
+        settingsButton.click();
+      }
+    });
+  </script>
 
   <script type="module" src="js/app.js"></script>
-
-  <div id="inventoryBarcodeModal" class="appModal">
-  <div class="appModalCard barcodePreviewModalCard">
-    <div class="appModalHeader">
-      <div>
-        <h2>Inventory Barcode Preview</h2>
-        <p class="muted">
-          Preview selected inventory labels before printing.
-        </p>
-      </div>
-
-      <button
-        id="closeInventoryBarcodeModalBtn"
-        type="button"
-        class="iconBtn"
-        aria-label="Close barcode preview"
-      >
-        ×
-      </button>
-    </div>
-
-    <div class="appModalBody">
-      <div class="barcodePrintControls">
-        <div class="fieldGroup">
-          <label for="inventoryBarcodeCopiesInput">Copies per item</label>
-          <input
-            id="inventoryBarcodeCopiesInput"
-            type="number"
-            min="1"
-            value="1"
-          />
-        </div>
-
-        <div class="fieldGroup">
-          <label for="inventoryBarcodeLabelSize">Label size</label>
-          <select id="inventoryBarcodeLabelSize">
-            <option value="2x1">2&quot; x 1&quot;</option>
-            <option value="3x1">3&quot; x 1&quot;</option>
-            <option value="4x2">4&quot; x 2&quot;</option>
-          </select>
-        </div>
-
-        <div class="fieldGroup">
-          <label for="inventoryBarcodeType">Barcode type</label>
-          <select id="inventoryBarcodeType">
-            <option value="CODE128">CODE128</option>
-          </select>
-        </div>
-
-        <button id="refreshInventoryBarcodePreviewBtn" type="button">
-          Refresh Preview
-        </button>
-
-        <button
-          id="printInventoryBarcodePreviewBtn"
-          type="button"
-          class="primaryBtn"
-        >
-          Print 
-        </button>
-      </div>
-
-      <div class="barcodePreviewHelp">
-        <strong>Label contents:</strong>
-        Part name, part number, location, price, and scannable barcode.
-      </div>
-
-      <div id="inventoryBarcodePreview" class="barcodePreviewSheet"></div>
-    </div>
-  </div>
-</div>
-
 </body>
 </html>

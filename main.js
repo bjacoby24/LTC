@@ -14,11 +14,16 @@ const ATTACHMENT_ROOTS = {
   purchaseOrder: "I:\\Maintenance\\Platform\\Invoices"
 };
 
+/* -------------------------
+   WINDOW
+------------------------- */
 function createWindow() {
   if (mainWindow && !mainWindow.isDestroyed()) {
     if (mainWindow.isMinimized()) {
       mainWindow.restore();
     }
+
+    mainWindow.show();
     mainWindow.focus();
     return mainWindow;
   }
@@ -55,6 +60,17 @@ function createWindow() {
   return mainWindow;
 }
 
+/* -------------------------
+   AUTO UPDATER
+
+   Behavior:
+   - Skips updater during npm start / development
+   - Checks GitHub Releases when installed app opens
+   - Downloads updates automatically
+   - Installs automatically after download
+   - Restarts into the new version
+   - Checks again every 15 minutes while app is open
+------------------------- */
 function setupAutoUpdater() {
   if (updaterInitialized) return;
   updaterInitialized = true;
@@ -66,6 +82,8 @@ function setupAutoUpdater() {
 
   autoUpdater.autoDownload = true;
   autoUpdater.autoInstallOnAppQuit = true;
+  autoUpdater.allowPrerelease = false;
+  autoUpdater.allowDowngrade = false;
 
   autoUpdater.on("checking-for-update", () => {
     console.log("[updater] Checking for update...");
@@ -73,35 +91,38 @@ function setupAutoUpdater() {
 
   autoUpdater.on("update-available", info => {
     installTriggered = false;
-    console.log("[updater] Update available:", info?.version);
+    console.log("[updater] Update available:", info?.version || "unknown");
   });
 
   autoUpdater.on("update-not-available", info => {
-    console.log("[updater] No update available:", info?.version);
+    console.log("[updater] No update available:", info?.version || "current");
   });
 
   autoUpdater.on("download-progress", progress => {
-    console.log(`[updater] Downloaded ${Math.round(progress?.percent || 0)}%`);
+    const percent = Math.round(Number(progress?.percent || 0));
+    console.log(`[updater] Download progress: ${percent}%`);
   });
 
   autoUpdater.on("update-downloaded", info => {
-    console.log("[updater] Update downloaded:", info?.version);
+    console.log("[updater] Update downloaded:", info?.version || "unknown");
 
     if (installTriggered) return;
     installTriggered = true;
 
     setTimeout(() => {
       try {
+        console.log("[updater] Installing update and restarting app...");
+
         if (mainWindow && !mainWindow.isDestroyed()) {
           mainWindow.removeAllListeners("close");
         }
 
         autoUpdater.quitAndInstall(true, true);
       } catch (error) {
-        console.error("[updater] Silent install failed:", error);
+        console.error("[updater] Auto install failed:", error);
         installTriggered = false;
       }
-    }, 1200);
+    }, 2000);
   });
 
   autoUpdater.on("error", error => {
@@ -153,6 +174,7 @@ function sanitizeFileName(value, fallback = "file") {
 function ensureAbsoluteInsideRoot(rootPath, candidatePath) {
   const resolvedRoot = path.resolve(rootPath);
   const resolvedCandidate = path.resolve(candidatePath);
+
   return (
     resolvedCandidate === resolvedRoot ||
     resolvedCandidate.startsWith(`${resolvedRoot}${path.sep}`)
@@ -179,6 +201,7 @@ async function getUniqueFilePath(targetDir, originalName) {
   const extension = parsed.ext || "";
 
   let attempt = 0;
+
   while (attempt < 1000) {
     const candidateName =
       attempt === 0
@@ -186,6 +209,7 @@ async function getUniqueFilePath(targetDir, originalName) {
         : `${baseName} (${attempt + 1})${extension}`;
 
     const candidatePath = path.join(targetDir, candidateName);
+
     if (!(await fileExists(candidatePath))) {
       return candidatePath;
     }
@@ -218,11 +242,13 @@ function normalizeIncomingFiles(files) {
 function decodeBase64Payload(dataUrlOrBase64) {
   const raw = String(dataUrlOrBase64 || "");
   const base64 = raw.includes(",") ? raw.split(",").pop() : raw;
+
   return Buffer.from(base64, "base64");
 }
 
 async function saveAttachmentsToRoot(rootPath, files, options = {}) {
   const normalizedFiles = normalizeIncomingFiles(files);
+
   if (!normalizedFiles.length) {
     return {
       ok: true,
@@ -247,6 +273,7 @@ async function saveAttachmentsToRoot(rootPath, files, options = {}) {
   await ensureDirectoryExists(safeTargetDir);
 
   const savedFiles = [];
+
   for (const file of normalizedFiles) {
     const uniquePath = await getUniqueFilePath(safeTargetDir, file.name);
     const buffer = decodeBase64Payload(file.data);
@@ -291,6 +318,7 @@ ipcMain.handle("attachments:save-work-order", async (_event, payload = {}) => {
     );
   } catch (error) {
     console.error("[attachments] save work order failed:", error);
+
     return {
       ok: false,
       error: error?.message || "Unable to save work order attachments."
@@ -310,6 +338,7 @@ ipcMain.handle("attachments:save-purchase-order", async (_event, payload = {}) =
     );
   } catch (error) {
     console.error("[attachments] save purchase order failed:", error);
+
     return {
       ok: false,
       error: error?.message || "Unable to save purchase order attachments."
@@ -320,16 +349,19 @@ ipcMain.handle("attachments:save-purchase-order", async (_event, payload = {}) =
 ipcMain.handle("attachments:open", async (_event, payload = {}) => {
   try {
     const filePath = path.resolve(String(payload.filePath || ""));
+
     if (!filePath) {
       throw new Error("No file path was provided.");
     }
 
     const exists = await fileExists(filePath);
+
     if (!exists) {
       throw new Error("The file could not be found.");
     }
 
     const result = await shell.openPath(filePath);
+
     if (result) {
       throw new Error(result);
     }
@@ -337,6 +369,7 @@ ipcMain.handle("attachments:open", async (_event, payload = {}) => {
     return { ok: true };
   } catch (error) {
     console.error("[attachments] open failed:", error);
+
     return {
       ok: false,
       error: error?.message || "Unable to open the attachment."
@@ -347,19 +380,30 @@ ipcMain.handle("attachments:open", async (_event, payload = {}) => {
 ipcMain.handle("attachments:delete", async (_event, payload = {}) => {
   try {
     const filePath = path.resolve(String(payload.filePath || ""));
+
     if (!filePath) {
       throw new Error("No file path was provided.");
     }
 
-    const allowedRoots = Object.values(ATTACHMENT_ROOTS).map(root => path.resolve(root));
-    const isAllowed = allowedRoots.some(root => ensureAbsoluteInsideRoot(root, filePath));
+    const allowedRoots = Object.values(ATTACHMENT_ROOTS).map(root =>
+      path.resolve(root)
+    );
+
+    const isAllowed = allowedRoots.some(root =>
+      ensureAbsoluteInsideRoot(root, filePath)
+    );
+
     if (!isAllowed) {
       throw new Error("That file path is not allowed.");
     }
 
     const exists = await fileExists(filePath);
+
     if (!exists) {
-      return { ok: true, deleted: false };
+      return {
+        ok: true,
+        deleted: false
+      };
     }
 
     await fsp.unlink(filePath);
@@ -370,6 +414,7 @@ ipcMain.handle("attachments:delete", async (_event, payload = {}) => {
     };
   } catch (error) {
     console.error("[attachments] delete failed:", error);
+
     return {
       ok: false,
       error: error?.message || "Unable to delete the attachment."
@@ -380,8 +425,12 @@ ipcMain.handle("attachments:delete", async (_event, payload = {}) => {
 ipcMain.handle("attachments:path-exists", async (_event, payload = {}) => {
   try {
     const targetPath = path.resolve(String(payload.targetPath || ""));
+
     if (!targetPath) {
-      return { ok: true, exists: false };
+      return {
+        ok: true,
+        exists: false
+      };
     }
 
     return {
@@ -390,9 +439,46 @@ ipcMain.handle("attachments:path-exists", async (_event, payload = {}) => {
     };
   } catch (error) {
     console.error("[attachments] path exists failed:", error);
+
     return {
       ok: false,
       error: error?.message || "Unable to check the path."
+    };
+  }
+});
+
+/* -------------------------
+   OPTIONAL APP INFO IPC
+------------------------- */
+ipcMain.handle("app:get-version", async () => {
+  return {
+    ok: true,
+    version: app.getVersion(),
+    isPackaged: app.isPackaged
+  };
+});
+
+ipcMain.handle("app:check-for-updates", async () => {
+  try {
+    if (!app.isPackaged) {
+      return {
+        ok: false,
+        skipped: true,
+        message: "Updates are skipped in development mode."
+      };
+    }
+
+    await autoUpdater.checkForUpdates();
+
+    return {
+      ok: true
+    };
+  } catch (error) {
+    console.error("[updater] Manual update check failed:", error);
+
+    return {
+      ok: false,
+      error: error?.message || "Unable to check for updates."
     };
   }
 });

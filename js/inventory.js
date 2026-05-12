@@ -95,28 +95,54 @@ export async function initInventory() {
       : {};
 
   function getCurrentPermissions() {
-    const loggedInUser = getLoggedInUser();
+  const loggedInUser = getLoggedInUser();
 
-    const permissions =
-      loggedInUser &&
-      typeof loggedInUser === "object" &&
-      loggedInUser.permissions &&
-      typeof loggedInUser.permissions === "object"
-        ? loggedInUser.permissions
-        : {};
+  const permissions =
+    loggedInUser &&
+    typeof loggedInUser === "object" &&
+    loggedInUser.permissions &&
+    typeof loggedInUser.permissions === "object"
+      ? loggedInUser.permissions
+      : {};
 
+  const basePermissions = {
+    inventoryView: true,
+    inventoryEdit: true,
+    inventoryDelete: false,
+    ...permissions
+  };
+
+  if (isAdminUser()) {
     return {
+      ...basePermissions,
       inventoryView: true,
       inventoryEdit: true,
-      inventoryDelete: false,
-      ...permissions
+      inventoryDelete: true
     };
   }
 
-  function isAdminUser() {
-    const loggedInUser = getLoggedInUser();
-    return normalizeLower(loggedInUser?.role) === "admin";
-  }
+  return basePermissions;
+}
+
+ function isAdminUser() {
+  const loggedInUser = getLoggedInUser();
+
+  const role = normalizeLower(loggedInUser?.role || "");
+  const username = normalizeLower(
+    loggedInUser?.username ||
+    loggedInUser?.name ||
+    loggedInUser?.displayName ||
+    ""
+  );
+
+  return (
+    role === "admin" ||
+    role === "administrator" ||
+    username === "admin" ||
+    username === "admin user" ||
+    username.includes("admin")
+  );
+}
 
   function canViewInventory() {
     return !!getCurrentPermissions().inventoryView;
@@ -489,8 +515,9 @@ export async function initInventory() {
 
   function applyInventoryPermissionUi() {
     if (dom.openInventoryFormBtn) {
-      dom.openInventoryFormBtn.style.display = canEditInventory() ? "" : "none";
-    }
+  dom.openInventoryFormBtn.style.display =
+    canEditInventory() || isAdminUser() ? "" : "none";
+}
 
     if (dom.deleteSelectedInventoryBtn) {
       dom.deleteSelectedInventoryBtn.style.display =
@@ -512,8 +539,15 @@ export async function initInventory() {
     }
 
     if (dom.importInventoryBtn) {
-      dom.importInventoryBtn.style.display = canEditInventory() ? "" : "none";
-    }
+  dom.importInventoryBtn.style.display = "";
+}
+
+console.log("Import button permission check:", {
+  importButtonExists: !!dom.importInventoryBtn,
+  canEditInventory: canEditInventory(),
+  isAdminUser: isAdminUser(),
+  display: dom.importInventoryBtn?.style.display
+});
 
     if (dom.exportInventoryBtn) {
       dom.exportInventoryBtn.style.display = canViewInventory() ? "" : "none";
@@ -2229,6 +2263,84 @@ function printInventoryBarcodePreview() {
   }, 5000);
 }
 
+function ensureInventoryImportControls() {
+  const dropdown = byId("inventoryOptionsDropdown");
+
+  if (!dropdown) {
+    console.warn("Missing #inventoryOptionsDropdown");
+    return;
+  }
+
+  let importBtn = byId("importInventoryBtn");
+
+  if (!importBtn) {
+    importBtn = document.createElement("button");
+    importBtn.id = "importInventoryBtn";
+    importBtn.type = "button";
+    importBtn.textContent = "Import";
+
+    const exportBtn = byId("exportInventoryBtn");
+
+    if (exportBtn && exportBtn.parentElement === dropdown) {
+      dropdown.insertBefore(importBtn, exportBtn);
+    } else {
+      dropdown.appendChild(importBtn);
+    }
+  }
+
+  let importInput = byId("inventoryImportInput");
+
+  if (!importInput) {
+    importInput = document.createElement("input");
+    importInput.id = "inventoryImportInput";
+    importInput.type = "file";
+    importInput.accept = ".csv,.xlsx,.xls";
+    importInput.style.display = "none";
+
+    document.body.appendChild(importInput);
+  }
+
+  dom.importInventoryBtn = importBtn;
+  dom.inventoryImportInput = importInput;
+}
+
+async function refreshInventoryFromRemote() {
+  try {
+    await hydrateInventory();
+
+    selectedInventoryIds = new Set(
+      [...selectedInventoryIds].filter(id =>
+        inventory.some(item => String(item.id) === String(id))
+      )
+    );
+
+    if (editingInventoryId != null) {
+      const stillExists = inventory.some(
+        item => String(item.id) === String(editingInventoryId)
+      );
+
+      if (!stillExists) {
+        closeInventoryPanel();
+      }
+    }
+
+    if (viewingInventoryId != null) {
+      const item = getInventoryById(viewingInventoryId);
+
+      if (!item) {
+        closeInventoryProfilePanel();
+      } else if (dom.inventoryProfilePanel?.classList.contains("show")) {
+        fillInventoryProfile(item);
+      }
+    }
+
+    renderInventoryGrid();
+    applyInventoryPermissionUi();
+  } catch (error) {
+    console.error("Inventory remote refresh failed:", error);
+  }
+}
+
   function bindEventsOnce() {
     if (eventsBound) return;
     eventsBound = true;
@@ -2365,20 +2477,20 @@ function printInventoryBarcodePreview() {
     }
 
     if (dom.importInventoryBtn) {
-      dom.importInventoryBtn.addEventListener("click", async () => {
-        closeInventoryOptionsDropdown();
+  dom.importInventoryBtn.addEventListener("click", async () => {
+    closeInventoryOptionsDropdown();
 
-        if (!(await requirePermission(
-          canEditInventory,
-          "Permission Required",
-          "You do not have permission to import inventory."
-        ))) {
-          return;
-        }
-
-        dom.inventoryImportInput?.click();
-      });
+    if (!canEditInventory() && !isAdminUser()) {
+      await showMessageModal(
+        "Permission Required",
+        "You do not have permission to import inventory."
+      );
+      return;
     }
+
+    dom.inventoryImportInput?.click();
+  });
+}
 
     if (dom.exportInventoryBtn) {
       dom.exportInventoryBtn.addEventListener("click", () => {
@@ -2455,13 +2567,15 @@ function printInventoryBarcodePreview() {
 
   await hydrateInventory();
 
-  if (dom.inventoryGlobalSearch) {
-    dom.inventoryGlobalSearch.value = inventoryGridState.globalSearch || "";
-  }
+ensureInventoryImportControls();
 
-  bindEventsOnce();
-  renderInventoryGrid();
-  applyInventoryPermissionUi();
+if (dom.inventoryGlobalSearch) {
+  dom.inventoryGlobalSearch.value = inventoryGridState.globalSearch || "";
+}
+
+bindEventsOnce();
+renderInventoryGrid();
+applyInventoryPermissionUi();
 
   return {
     refresh: refreshInventoryFromRemote,
