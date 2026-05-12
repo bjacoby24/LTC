@@ -264,9 +264,23 @@ export async function initInventory() {
   }
 
   function toNumber(value, fallback = 0) {
-    const num = Number(value);
-    return Number.isFinite(num) ? num : fallback;
+  if (typeof value === "number") {
+    return Number.isFinite(value) ? value : fallback;
   }
+
+  const clean = String(value ?? "")
+    .trim()
+    .replace(/\$/g, "")
+    .replace(/,/g, "")
+    .replace(/\s+/g, "")
+    .replace(/^\((.*)\)$/, "-$1");
+
+  if (!clean) return fallback;
+
+  const num = Number(clean);
+
+  return Number.isFinite(num) ? num : fallback;
+}
 
   function normalizeDateString(value) {
     const clean = String(value || "").trim();
@@ -1681,47 +1695,95 @@ console.log("Import button permission check:", {
   }
 
   function mapImportRecord(record = {}) {
-    const normalizedKeys = Object.keys(record).reduce((acc, key) => {
-      acc[normalizeLower(key).replace(/\s+/g, "")] = record[key];
-      return acc;
-    }, {});
+  const normalizedKeys = Object.keys(record).reduce((acc, key) => {
+    const normalizedKey = normalizeLower(key)
+      .replace(/[#]/g, "number")
+      .replace(/[^a-z0-9]+/g, "");
 
-    const get = (...keys) => {
-      for (const key of keys) {
-        const normalizedKey = normalizeLower(key).replace(/\s+/g, "");
+    acc[normalizedKey] = record[key];
+    return acc;
+  }, {});
 
-        if (normalizedKey in normalizedKeys) {
-          return normalizedKeys[normalizedKey];
-        }
+  const get = (...keys) => {
+    for (const key of keys) {
+      const normalizedKey = normalizeLower(key)
+        .replace(/[#]/g, "number")
+        .replace(/[^a-z0-9]+/g, "");
+
+      if (normalizedKey in normalizedKeys) {
+        return normalizedKeys[normalizedKey];
       }
+    }
 
-      return "";
-    };
+    return "";
+  };
 
-    return normalizeInventoryRecord({
-      id: get("id"),
-      partNumber: get("partNumber", "part #", "part", "part no", "part number"),
-      name: get("name", "itemName", "item name", "part name", "description"),
-      category: get("category", "type"),
-      quantity: get("quantity", "qty"),
-      unitCost: get("unitCost", "unit cost", "cost"),
-      location: get("location"),
-      vendor: get("vendor"),
-      reorderPoint: get("reorderPoint", "reorder point", "min", "minimum"),
-      reorderQuantity: get("reorderQuantity", "reorder qty", "reorder quantity"),
-      maximumQuantity: get("maximumQuantity", "max qty", "maximum quantity", "max"),
-      binLocation: get("binLocation", "bin location", "bin", "shelf"),
-      manufacturer: get("manufacturer"),
-      partType: get("partType", "part type"),
-      uom: get("uom", "unit", "unit of measure"),
-      notes: get("notes"),
-      profileNotes: get("profileNotes", "profile notes"),
-      lastPurchasedAt: get("lastPurchasedAt", "last purchased"),
-      lastIssuedAt: get("lastIssuedAt", "last issued"),
-      createdAt: get("createdAt", "created at"),
-      updatedAt: new Date().toISOString()
-    });
-  }
+  const importedUnitCost = get(
+    "unitCost",
+    "unit cost",
+    "unit_cost",
+    "cost",
+    "price",
+    "unit price",
+    "unit_price",
+    "price each",
+    "each price",
+    "cost each",
+    "each cost",
+    "unit cost each",
+    "last cost",
+    "last price",
+    "purchase price",
+    "purchase cost",
+    "current cost",
+    "current price",
+    "avg cost",
+    "average cost"
+  );
+
+  return normalizeInventoryRecord({
+    id: get("id"),
+    partNumber: get(
+      "partNumber",
+      "part #",
+      "part no",
+      "part number",
+      "partnumber",
+      "item number",
+      "item #",
+      "item no",
+      "sku"
+    ),
+    name: get(
+      "name",
+      "itemName",
+      "item name",
+      "part name",
+      "description",
+      "item description",
+      "part description"
+    ),
+    category: get("category", "type", "part type"),
+    quantity: get("quantity", "qty", "on hand", "onhand", "stock", "stock qty"),
+    unitCost: importedUnitCost,
+    lastPurchasedCost: importedUnitCost,
+    location: get("location", "warehouse", "stock location"),
+    vendor: get("vendor", "supplier"),
+    reorderPoint: get("reorderPoint", "reorder point", "min", "minimum", "minimum quantity", "min qty"),
+    reorderQuantity: get("reorderQuantity", "reorder qty", "reorder quantity", "order qty", "order quantity"),
+    maximumQuantity: get("maximumQuantity", "max qty", "maximum quantity", "max"),
+    binLocation: get("binLocation", "bin location", "bin", "shelf"),
+    manufacturer: get("manufacturer", "mfg", "brand"),
+    partType: get("partType", "part type"),
+    uom: get("uom", "unit", "unit of measure", "um"),
+    notes: get("notes", "comment", "comments"),
+    profileNotes: get("profileNotes", "profile notes"),
+    lastPurchasedAt: get("lastPurchasedAt", "last purchased", "last purchase date"),
+    lastIssuedAt: get("lastIssuedAt", "last issued", "last issue date"),
+    createdAt: get("createdAt", "created at"),
+    updatedAt: new Date().toISOString()
+  });
+}
 
   async function handleInventoryImport(event) {
     if (!(await requirePermission(
